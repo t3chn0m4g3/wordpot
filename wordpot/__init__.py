@@ -107,8 +107,9 @@ else:
 
 @app.after_request
 def add_server_header(response):
-    if app.config['SERVER']:
-        response.headers['Server'] = app.config['SERVER']
+    server_header = app.config.get('SERVER')
+    if server_header:
+        response.headers['Server'] = server_header
 
     return response
 
