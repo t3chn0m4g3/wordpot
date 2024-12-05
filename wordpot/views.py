@@ -34,9 +34,8 @@ def commons(filename=None, ext=None):
     else:        
         abort(404)
 
-
 @app.route('/wp-admin', methods=['GET', 'POST'])
-@app.route('/wp-admin<regex("\/.*"):subpath>', methods=['GET', 'POST'])
+@app.route(r'/wp-admin<regex(r"\/.*"):subpath>', methods=['GET', 'POST'])
 def admin(subpath='/'):
     """ Admin panel probing handler """
     origin = request.remote_addr
@@ -50,7 +49,6 @@ def admin(subpath='/'):
         if 'log_json' in p.outputs:
             if app.config['HPFEEDS_ENABLED']:
                 app.config['hpfeeds_client'].publish(app.config['HPFEEDS_TOPIC'], p.outputs['log_json'])
-            # Log JSON data to file regardless of HPFEEDS being enabled
             LOGGER.info('%s', p.outputs['log_json'])
         if 'template' in p.outputs:
             if 'template_vars' in p.outputs:
@@ -60,17 +58,15 @@ def admin(subpath='/'):
     return redirect('wp-login.php')
 
 @app.route('/wp-content/plugins/<plugin>', methods=['GET', 'POST'])
-@app.route('/wp-content/plugins/<plugin><regex("(\/.*)"):subpath>', methods=['GET', 'POST'])
+@app.route(r'/wp-content/plugins/<plugin><regex(r"(\/.*)"):subpath>', methods=['GET', 'POST'])
 def plugin(plugin, subpath='/'):
     """ Plugin probing handler """
     origin = request.remote_addr
     LOGGER.info('%s probed for plugin "%s" with path: %s', origin, plugin, subpath)
     
-    # Is the plugin in the whitelist?
     if not is_plugin_whitelisted(plugin):
         abort(404)
 
-    # Plugins hook
     for p in pm.hook('plugins'):
         p.start(plugin=plugin, subpath=subpath, request=request)
         if 'log' in p.outputs:
@@ -78,7 +74,6 @@ def plugin(plugin, subpath='/'):
         if 'log_json' in p.outputs:
             if app.config['HPFEEDS_ENABLED']:
                 app.config['hpfeeds_client'].publish(app.config['HPFEEDS_TOPIC'], p.outputs['log_json'])
-            # Log JSON data to file regardless of HPFEEDS being enabled
             LOGGER.info('%s', p.outputs['log_json'])
         if 'template' in p.outputs:
             if 'template_vars' in p.outputs:
@@ -88,17 +83,15 @@ def plugin(plugin, subpath='/'):
     return render_template(TEMPLATE, vars={})
 
 @app.route('/wp-content/themes/<theme>', methods=['GET', 'POST'])
-@app.route('/wp-content/themes/<theme><regex("(\/.*)"):subpath>', methods=['GET', 'POST'])
+@app.route(r'/wp-content/themes/<theme><regex(r"(\/.*)"):subpath>', methods=['GET', 'POST'])
 def theme(theme, subpath='/'):
     """ Theme probing handler """
     origin = request.remote_addr
     LOGGER.info('%s probed for theme "%s" with path: %s', origin, theme, subpath)
 
-    # Is the theme whitelisted?
     if not is_theme_whitelisted(theme):
         abort(404)
 
-    # Plugins hook
     for p in pm.hook('themes'):
         p.start(theme=theme, subpath=subpath, request=request)
         if 'log' in p.outputs:
@@ -106,12 +99,10 @@ def theme(theme, subpath='/'):
         if 'log_json' in p.outputs:
             if app.config['HPFEEDS_ENABLED']:
                 app.config['hpfeeds_client'].publish(app.config['HPFEEDS_TOPIC'], p.outputs['log_json'])
-            # Log JSON data to file regardless of HPFEEDS being enabled
             LOGGER.info('%s', p.outputs['log_json'])
         if 'template' in p.outputs:
             if 'template_vars' in p.outputs:
                 return render_template(p.outputs['template'], vars=p.outputs['template_vars'])
             return render_template(p.outputs['template'], vars={})
 
-    return render_template(TEMPLATE, vars={}) 
-
+    return render_template(TEMPLATE, vars={})
