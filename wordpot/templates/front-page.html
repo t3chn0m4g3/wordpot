@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }} | {{ vars.get('BLOGSUBTITLE', config['BLOGSUBTITLE']) }}</title>
+    <link rel="profile" href="https://gmpg.org/xfn/11" />
+    <link rel="alternate" type="application/rss+xml" title="{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }} Feed" href="/feed/" />
+    <link rel="pingback" href="/xmlrpc.php" />
+    <link rel="https://api.w.org/" href="/wp-json/" />
+    <link rel="EditURI" type="application/rsd+xml" title="RSD" href="/xmlrpc.php?rsd" />
+    <link rel="wlwmanifest" type="application/wlwmanifest+xml" href="/wp-includes/wlwmanifest.xml" />
+    <link rel="stylesheet" id="wp-block-library-css" href="/wp-includes/css/dist/block-library/style.min.css?ver={{ vars.get('VERSION', config['VERSION']) }}" media="all" />
+    <link rel="stylesheet" id="global-styles-css" href="/wp-includes/css/global-styles.css?ver={{ vars.get('VERSION', config['VERSION']) }}" media="all" />
+    <link rel="stylesheet" id="{{ vars.get('THEME', config['THEME']) }}-style-css" href="/wp-content/themes/{{ vars.get('THEME', config['THEME']) }}/style.css?ver={{ vars.get('VERSION', config['VERSION']) }}" media="all" />
+    {% for plugin in vars['FRONT']['plugins'] %}
+    {% if plugin.slug == 'elementor' %}
+    <link rel="stylesheet" id="elementor-frontend-css" href="/wp-content/plugins/elementor/assets/css/frontend.min.css?ver={{ plugin.version }}" media="all" />
+    {% elif plugin.slug == 'woocommerce' %}
+    <link rel="stylesheet" id="woocommerce-layout-css" href="/wp-content/plugins/woocommerce/assets/css/woocommerce-layout.css?ver={{ plugin.version }}" media="all" />
+    {% elif plugin.slug == 'contact-form-7' %}
+    <link rel="stylesheet" id="contact-form-7-css" href="/wp-content/plugins/contact-form-7/includes/css/styles.css?ver={{ plugin.version }}" media="all" />
+    {% elif plugin.slug == 'wpforms-lite' %}
+    <link rel="stylesheet" id="wpforms-full-css" href="/wp-content/plugins/wpforms-lite/assets/css/wpforms-full.min.css?ver={{ plugin.version }}" media="all" />
+    {% endif %}
+    {% endfor %}
+    <style id="global-styles-inline-css">
+    body{--wp--preset--color--base:#ffffff;--wp--preset--color--contrast:#111827;--wp--preset--color--primary:#1d4ed8;--wp--style--global--content-size:760px;--wp--style--global--wide-size:1160px}
+    .wp-site-blocks > *{margin-block-start:0}
+    </style>
+    <script id="wp-emoji-settings" type="application/json">{"baseUrl":"/wp-includes/images/smilies/","ext":".png","svgUrl":"/wp-includes/images/smilies/svg/"}</script>
+    <meta name="generator" content="WordPress {{ vars.get('VERSION', config['VERSION']) }}" />
+    {% if vars['FRONT']['site_type'] == 'commerce' %}
+    <meta name="generator" content="WooCommerce 10.8.1" />
+    {% endif %}
+</head>
+<body class="{{ vars['FRONT']['body_class'] }}">
+<div class="wp-site-blocks">
+    <header class="wp-block-template-part site-header">
+        <div class="site-header__inner">
+            <div class="site-branding">
+                <p class="site-title"><a href="/" rel="home">{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }}</a></p>
+                <p class="site-description">{{ vars.get('BLOGSUBTITLE', config['BLOGSUBTITLE']) }}</p>
+            </div>
+            <nav class="wp-block-navigation" aria-label="Primary">
+                <ul class="wp-block-navigation__container">
+                    <li class="wp-block-navigation-item current-menu-item"><a href="/">Home</a></li>
+                    <li class="wp-block-navigation-item"><a href="/?page_id=2">About</a></li>
+                    <li class="wp-block-navigation-item"><a href="/?p=1">News</a></li>
+                    {% if vars['FRONT']['site_type'] == 'commerce' %}
+                    <li class="wp-block-navigation-item"><a href="/shop/">Shop</a></li>
+                    <li class="wp-block-navigation-item"><a href="/cart/">Cart</a></li>
+                    {% else %}
+                    <li class="wp-block-navigation-item"><a href="/contact/">Contact</a></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main" class="site-main wp-block-group">
+        <section class="wp-block-cover alignfull">
+            <div class="hero-grid">
+                <div class="wp-block-group">
+                    <p class="eyebrow">{{ vars['FRONT']['hero_label'] }}</p>
+                    <h1 class="wp-block-heading">{{ vars['FRONT']['hero_title'] }}</h1>
+                    <p class="hero-copy">{{ vars['FRONT']['hero_text'] }}</p>
+                    <div class="wp-block-buttons">
+                        <div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="/?page_id=2">{{ vars['FRONT']['primary_action'] }}</a></div>
+                        <div class="wp-block-button is-style-outline"><a class="wp-block-button__link wp-element-button" href="/?p=1">{{ vars['FRONT']['secondary_action'] }}</a></div>
+                    </div>
+                </div>
+                <div class="hero-panel wp-block-group">
+                    <h2 class="wp-block-heading">Site update</h2>
+                    <p>Recent content, plugin checks and public pages were refreshed this month.</p>
+                    <div class="metric-grid">
+                        {% for item in vars['FRONT']['stats'] %}
+                        <div class="metric"><strong>{{ item.value }}</strong><span>{{ item.label }}</span></div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        {% if vars['FRONT']['site_type'] == 'agency' %}
+        <section class="section-band elementor-section elementor-top-section">
+            <div class="section-heading elementor-widget-container">
+                <h2 class="wp-block-heading">Recent launch work</h2>
+                <p>Campaign systems, reusable landing sections and lead forms.</p>
+            </div>
+        {% else %}
+        <section class="section-band wp-block-columns alignwide">
+            <div class="section-heading">
+                <h2 class="wp-block-heading">What is new</h2>
+                <p>Updates from the site team and recent content areas.</p>
+            </div>
+        {% endif %}
+            <div class="card-grid">
+                {% for card in vars['FRONT']['cards'] %}
+                <div class="wp-block-column">
+                    <h3>{{ card.title }}</h3>
+                    <p>{{ card.text }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        {% if vars['FRONT']['products'] %}
+        <section class="section-band woocommerce">
+            <div class="section-heading">
+                <h2 class="wp-block-heading">Featured products</h2>
+                <p>Popular items from the store catalog.</p>
+            </div>
+            <ul class="products columns-3">
+                {% for product in vars['FRONT']['products'] %}
+                <li class="product type-product status-publish instock">
+                    <span class="onsale">{{ product.badge }}</span>
+                    <h2 class="woocommerce-loop-product__title">{{ product.name }}</h2>
+                    <span class="price">{{ product.price }}</span>
+                    <a class="button product_type_simple add_to_cart_button" href="/?add-to-cart={{ loop.index }}">Add to cart</a>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        <section class="section-band wp-block-query">
+            <div class="section-heading">
+                <h2 class="wp-block-heading">Latest posts</h2>
+                <p>Recent entries from {{ vars.get('BLOGTITLE', config['BLOGTITLE']) }}.</p>
+            </div>
+            <div class="post-grid wp-block-post-template">
+                {% for post in vars['FRONT']['posts'] %}
+                <article class="wp-block-post post type-post status-publish format-standard hentry category-{{ post.category|lower }}">
+                    <div class="wp-block-post-date">{{ post.date }} in {{ post.category }}</div>
+                    <h3 class="wp-block-post-title"><a href="{{ post.url }}">{{ post.title }}</a></h3>
+                    <p class="wp-block-post-excerpt">{{ post.excerpt }}</p>
+                    <div class="wp-block-post-author">By <a href="/author/{{ vars['FRONT']['author'].slug }}/">{{ vars['FRONT']['author'].name }}</a></div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+
+    <footer class="wp-block-template-part site-footer">
+        <div class="site-footer__inner">
+            <p>{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }}. Powered by <a href="https://wordpress.org/" rel="generator">WordPress</a>.</p>
+            <p><a href="/wp-login.php">Log in</a> | <a href="/feed/">Entries feed</a> | <a href="/wp-json/">REST API</a></p>
+        </div>
+    </footer>
+</div>
+</body>
+</html>

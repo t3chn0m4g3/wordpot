@@ -3,12 +3,12 @@
 <head>
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 	<title>WordPress &#8250; ReadMe</title>
-    <link rel="stylesheet" href="{{ url_for('static', _external=True,  filename='wp-admin/css/install.css') }}" type="text/css" />
+    <link rel="stylesheet" href="/wp-admin/css/install.css?ver={{ vars.get('VERSION', config['VERSION']) }}" type="text/css" />
 </head>
 <body>
 <h1 id="logo">
-	<a href="http://wordpress.org/"><img alt="WordPress" src="{{ url_for('static', _external=True,  filename='wp-admin/images/wordpress-logo.png') }}" /></a>
-    <br /> Version {{ config['VERSION'] }}
+	<a href="http://wordpress.org/"><img alt="WordPress" src="/wp-admin/images/wordpress-logo.png" /></a>
+    <br /> Version {{ vars.get('VERSION', config['VERSION']) }}
 </h1>
 <p style="text-align: center">Semantic Personal Publishing Platform</p>
 

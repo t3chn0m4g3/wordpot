@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+import os
+import sys
+
+if '--version' in sys.argv:
+    os.environ['WORDPOT_SUPPRESS_BANNER'] = '1'
+
 try:
     from flask import Flask
 except ImportError:
@@ -7,9 +13,9 @@ except ImportError:
     print ("   $ pip install flask\n")
     exit()
 
-from wordpot import app, pm, parse_options, check_options 
+from wordpot import app, parse_options, check_options
+from wordpot.branding import APP_DISPLAY_NAME
 from wordpot.logger import *
-import os
 
 check_options()
 
@@ -18,6 +24,6 @@ if __name__ == '__main__':
     LOGGER.info('Checking command line options')
     check_options()
 
-    LOGGER.info('Honeypot started on %s:%s', app.config['HOST'], app.config['PORT'])
+    LOGGER.info('%s started on %s:%s', APP_DISPLAY_NAME, app.config['HOST'], app.config['PORT'])
     app.run(debug=app.debug, host=app.config['HOST'], port=int(app.config['PORT']))
     

@@ -1,16 +1,17 @@
-#/usr/bin/env python3
+#!/usr/bin/env python3
 
 try:
-    from flask import Flask
+    from flask import Flask, g, request
 except ImportError:
     print ("\n[X] Please install Flask:")
     print ("   $ pip install flask\n")
     exit()
 
 from optparse import OptionParser 
+from wordpot.branding import APP_DISPLAY_NAME, emit_startup_banner
 from wordpot.logger import * 
 from werkzeug.routing import BaseConverter 
-from wordpot.plugins_manager import PluginsManager 
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 
 # ---------------
@@ -29,9 +30,27 @@ class RegexConverter(BaseConverter):
 REQUIRED_OPTIONS = {
         'HOST':  '127.0.0.1',
         'PORT':  '80',
-        'THEME': 'twentyeleven',
+        'THEME': 'twentytwentyfive',
         'BLOGTITLE': 'Random Rambling',
-        'AUTHORS': ['admin']
+        'BLOGSUBTITLE': 'Just another WordPress site',
+        'VERSION': '7.0',
+        'AUTHORS': ['admin'],
+        'INTERACTION_DEPTH': 'medium',
+        'MAX_CONTENT_LENGTH': 65536,
+        'PAYLOAD_EXCERPT_BYTES': 4096,
+        'PAYLOAD_STORAGE_ENABLED': True,
+        'PAYLOAD_STORAGE_MAX_BYTES': 65536,
+        'PAYLOAD_DIR_MODE': 0o750,
+        'PAYLOAD_FILE_MODE': 0o640,
+        'PAYLOAD_DIR': None,
+        'EVENT_LOG_FILE': 'wordpot.json',
+        'EVENT_LOG_EXCLUDE_HEALTHCHECKS': True,
+        'EVENT_LOG_EXCLUDE_PATHS': ['/healthz'],
+        'EVENT_DEST_IP': None,
+        'EVENT_DEST_PORT': None,
+        'PROFILE_ROTATION': 'startup',
+        'PROFILE_STATE_FILE': None,
+        'TRUST_PROXY_HEADERS': False,
         }
 
 
@@ -39,22 +58,23 @@ def parse_options():
     usage = "usage: %prog [options]"
 
     parser = OptionParser(usage=usage)
+    parser.add_option('--version', action='store_true', dest='SHOW_VERSION', help='Show Wordpot version and exit')
     parser.add_option('--host', dest='HOST', help='Host address')
     parser.add_option('--port', dest='PORT', help='Port number')
     parser.add_option('--title', dest='BLOGTITLE', help='Blog title')
     parser.add_option('--theme', dest='THEME', help='Default theme name')
-    parser.add_option('--plugins', dest='PLUGINS', help='Fake installed plugins')
-    parser.add_option('--themes', dest='THEMES', help='Fake installed themes')
     parser.add_option('--ver', dest='VERSION', help='Wordpress version')
     parser.add_option('--server', dest='SERVER', help='Custom "Server" header')
+    parser.add_option('--profile', dest='PROFILE_ID', help='Fixed honeypot profile id')
 
     (options, args) = parser.parse_args()
+    if options.SHOW_VERSION:
+        print(APP_DISPLAY_NAME)
+        raise SystemExit(0)
     
     # for opt, val in options.__dict__.iteritems():
     for opt, val in options.__dict__.items():
         if val is not None:
-            if opt in ['PLUGINS', 'THEMES']:
-                val = [ v.strip() for v in val.split(',') ] 
             app.config[opt] = val
 
 
@@ -86,6 +106,19 @@ try:
 except:
     LOGGER.error('Can\'t load conf file')
 check_options()
+app.config['MAX_CONTENT_LENGTH'] = int(app.config.get('MAX_CONTENT_LENGTH', 65536))
+app.config['PAYLOAD_STORAGE_MAX_BYTES'] = int(app.config.get('PAYLOAD_STORAGE_MAX_BYTES') or app.config['MAX_CONTENT_LENGTH'])
+from wordpot.profiles import initialize_startup_profile
+initialize_startup_profile(app)
+if os.environ.get('WORDPOT_SUPPRESS_BANNER') not in {'1', 'true', 'yes'}:
+    emit_startup_banner(
+        LOGGER,
+        profile_id=app.config.get('_STARTUP_PROFILE_ID') or app.config.get('PROFILE_ID'),
+        log_dir=log_dir(),
+    )
+
+if app.config.get('TRUST_PROXY_HEADERS'):
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 if app.config.get('HPFEEDS_ENABLED', False):
     import hpfeeds
@@ -98,26 +131,34 @@ if app.config.get('HPFEEDS_ENABLED', False):
     )
     app.config['hpfeeds_client'].s.settimeout(0.01)
 else:
-    LOGGER.warn('hpfeeds is disabled')
+    LOGGER.warning('hpfeeds is disabled')
 
 
 # ------------------------
 # Add Custom Server Header
 #-------------------------
 
+@app.before_request
+def assign_request_id():
+    from wordpot.events import request_id
+    request_id()
+    if request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+        request.get_data(cache=True, as_text=False)
+
+
 @app.after_request
 def add_server_header(response):
-    server_header = app.config.get('SERVER')
+    try:
+        from wordpot.profiles import current_profile
+        server_header = current_profile().get('server_header') or app.config.get('SERVER')
+    except Exception:
+        server_header = app.config.get('SERVER')
     if server_header:
         response.headers['Server'] = server_header
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    if hasattr(g, 'request_id'):
+        response.headers['X-Request-ID'] = g.request_id
 
     return response
-
-# ----------------------------
-# Building the plugins manager
-# ----------------------------
-
-pm = PluginsManager()
-pm.load()
 
 import wordpot.views

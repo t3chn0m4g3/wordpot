@@ -1,33 +1,13 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-from flask import request
-from wordpot import app
-from wordpot.logger import LOGGER
+from wordpot.profiles import current_profile, plugin_for_slug, theme_for_slug
 
-# -----------------
-# Plugins whitelist
-# -----------------
 
 def is_plugin_whitelisted(plugin):
-    # If PLUGINS option doesn't exist allow all
-    if 'PLUGINS' not in app.config:
-        return True
-    else:
-        # Plugin is in the whitelist
-        if plugin in app.config['PLUGINS']:
-            return True
-    return False
+    profile = current_profile()
+    return plugin_for_slug(profile, plugin) is not None
 
-# ----------------
-# Themes whitelist
-# ----------------
 
 def is_theme_whitelisted(theme):
-    # If THEMES options doesn't exist allow all  
-    if 'THEMES' not in app.config:
-        return True
-    else:
-        # Theme is in the whitelist
-        if theme in app.config['THEMES'] or theme == app.config['THEME']:
-            return True
-    return False
+    profile = current_profile()
+    return theme_for_slug(profile, theme) is not None
