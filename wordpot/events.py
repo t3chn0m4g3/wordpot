@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import base64
+import fcntl
 import hashlib
 import ipaddress
 import json
 import os
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -125,6 +127,19 @@ def source_port_from_request(req):
     return _int_or_none(req.environ.get("REMOTE_PORT"))
 
 
+def _listening_socket_ip(req):
+    sock = req.environ.get("gunicorn.socket")
+    if sock is None:
+        return None
+    try:
+        address = sock.getsockname()
+    except (OSError, AttributeError):
+        return None
+    if isinstance(address, tuple) and address:
+        return _first_specific_host([address[0]])
+    return None
+
+
 def destination_ip_from_request(req):
     from wordpot import app
 
@@ -140,13 +155,12 @@ def destination_ip_from_request(req):
         if forwarded_host:
             return forwarded_host
 
+    # SERVER_NAME and HTTP_HOST are derived from the client's Host header, so
+    # only addresses of the local listening socket are used here.
     return _first_specific_host([
         req.environ.get("SERVER_ADDR"),
         req.environ.get("LOCAL_ADDR"),
-        req.environ.get("SERVER_NAME"),
-        req.environ.get("HTTP_HOST"),
-        req.host,
-    ])
+    ]) or _listening_socket_ip(req)
 
 
 def destination_port_from_request(req):
@@ -229,15 +243,46 @@ def _event_log_path():
     return path
 
 
+def _event_log_rotation():
+    from wordpot import app
+
+    max_bytes = _int_or_none(os.environ.get("WORDPOT_EVENT_LOG_MAX_BYTES") or app.config.get("EVENT_LOG_MAX_BYTES")) or 0
+    backup_count = _int_or_none(os.environ.get("WORDPOT_EVENT_LOG_BACKUP_COUNT") or app.config.get("EVENT_LOG_BACKUP_COUNT")) or 0
+    return max_bytes, backup_count
+
+
+def _rotate_event_log(path, backup_count):
+    if backup_count <= 0:
+        os.truncate(path, 0)
+        return
+    for index in range(backup_count - 1, 0, -1):
+        source = "%s.%s" % (path, index)
+        if os.path.exists(source):
+            os.replace(source, "%s.%s" % (path, index + 1))
+    os.replace(path, "%s.1" % path)
+
+
 def write_event_line(line):
     path = _event_log_path()
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o640)
-    try:
-        with os.fdopen(fd, "a", encoding="utf-8") as handle:
-            handle.write(line)
-            handle.write("\n")
-    finally:
-        _chmod_best_effort(path, 0o640)
+    data = (line + "\n").encode("utf-8")
+    max_bytes, backup_count = _event_log_rotation()
+    lock_path = "%s.lock" % path
+
+    # One write() per event on an O_APPEND descriptor, serialized with an
+    # advisory lock so gunicorn workers and threads never interleave lines.
+    with open(lock_path, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            if max_bytes > 0 and os.path.exists(path) and os.path.getsize(path) + len(data) > max_bytes:
+                _rotate_event_log(path, backup_count)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o640)
+            try:
+                os.write(fd, data)
+            finally:
+                os.close(fd)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+    _chmod_best_effort(path, 0o640)
 
 
 def store_payload(data, payload_sha256):
@@ -410,9 +455,19 @@ def build_event_dict(
         "credentials_observed": credentials,
         "response_status": response_status,
     }
+    details = dict(details or {})
+    if req.headers.get("Host"):
+        details.setdefault("http_host", req.headers.get("Host"))
     if details:
         event["details"] = details
     return omit_empty_fields(event)
+
+
+def is_loopback_request(req):
+    try:
+        return ipaddress.ip_address(req.remote_addr or "").is_loopback
+    except ValueError:
+        return False
 
 
 def should_skip_event(req):
@@ -423,30 +478,55 @@ def should_skip_event(req):
             return False
 
         excluded_paths = set(app.config.get("EVENT_LOG_EXCLUDE_PATHS", []))
-        if req.path in excluded_paths:
-            return True
-
-        if req.headers.get("X-Wordpot-Healthcheck") == "1":
-            return True
+        return req.path in excluded_paths and is_loopback_request(req)
     except Exception:
         return False
 
-    return False
+
+_HPFEEDS_STATE = {"pid": None, "client": None}
+_HPFEEDS_LOCK = threading.Lock()
+
+
+def _create_hpfeeds_client():
+    from wordpot import app
+    import hpfeeds
+
+    client = hpfeeds.new(
+        app.config["HPFEEDS_HOST"],
+        app.config["HPFEEDS_PORT"],
+        app.config["HPFEEDS_IDENT"],
+        app.config["HPFEEDS_SECRET"],
+    )
+    client.s.settimeout(0.01)
+    return client
+
+
+def _hpfeeds_client():
+    # gunicorn --preload forks after import, so a client created in the master
+    # would share one socket between workers. Connect lazily per process.
+    pid = os.getpid()
+    if _HPFEEDS_STATE["pid"] != pid or _HPFEEDS_STATE["client"] is None:
+        _HPFEEDS_STATE["client"] = _create_hpfeeds_client()
+        _HPFEEDS_STATE["pid"] = pid
+    return _HPFEEDS_STATE["client"]
 
 
 def publish_event(event):
+    from wordpot import app
+
     line = json.dumps(event, sort_keys=True)
     try:
         write_event_line(line)
     except Exception as exc:
         LOGGER.warning("Unable to write JSONL event: %s", exc)
 
+    if not app.config.get("HPFEEDS_ENABLED"):
+        return
     try:
-        from wordpot import app
-
-        if app.config.get("HPFEEDS_ENABLED") and app.config.get("hpfeeds_client"):
-            app.config["hpfeeds_client"].publish(app.config["HPFEEDS_TOPIC"], line)
+        with _HPFEEDS_LOCK:
+            _hpfeeds_client().publish(app.config["HPFEEDS_TOPIC"], line)
     except Exception as exc:
+        _HPFEEDS_STATE["client"] = None
         LOGGER.warning("Unable to publish hpfeeds event: %s", exc)
 
 

@@ -596,9 +596,11 @@ def configured_profiles(app):
 
 
 def client_ip_from_request(req):
+    # Only the direct peer is trusted. Behind a trusted proxy, ProxyFix
+    # (TRUST_PROXY_HEADERS) rewrites remote_addr before we get here.
     if req is None:
         return "0.0.0.0"
-    return req.headers.get("X-Real-IP") or (req.headers.get("X-Forwarded-For", "").split(",")[0].strip() or req.remote_addr or "0.0.0.0")
+    return req.remote_addr or "0.0.0.0"
 
 
 def _profile_by_id(profiles, profile_id):

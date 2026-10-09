@@ -71,12 +71,8 @@ def ready_container():
     last_error = None
     while time.time() < deadline:
         try:
-            status, _, body = http_request(
-                "/healthz",
-                headers={"X-Wordpot-Healthcheck": "1"},
-                timeout=2,
-            )
-            if status == 200 and body == b"ok\n":
+            status, _, _ = http_request("/readme.html", timeout=2)
+            if status == 200:
                 return True
         except URLError as exc:
             last_error = exc
@@ -86,9 +82,10 @@ def ready_container():
 
 
 def test_running_container_http_surface(ready_container):
-    status, headers, body = http_request("/healthz", headers={"X-Wordpot-Healthcheck": "1"})
-    assert status == 200
-    assert body == b"ok\n"
+    # /healthz is reserved for the in-container healthcheck on 127.0.0.1.
+    status, headers, body = http_request("/healthz")
+    assert status == 404
+    assert body != b"ok\n"
 
     status, headers, body = http_request("/")
     text = body.decode("utf-8", errors="replace")
@@ -96,7 +93,7 @@ def test_running_container_http_surface(ready_container):
     assert "WordPress" in text
     assert "wp-json" in text
     assert "/wp-content/themes/" in text
-    assert headers.get("X-Request-ID")
+    assert "X-Request-ID" not in headers
 
     status, _, body = http_request("/wp-json/")
     rest_index = json.loads(body.decode("utf-8"))
@@ -155,7 +152,7 @@ def require_existing_host_path(path, env_name):
     pytest.skip("%s is not mounted on the host: %s" % (env_name, path))
 
 
-def wait_for_event(event_file, request_id, timeout=8):
+def wait_for_event(event_file, marker, timeout=8):
     deadline = time.time() + timeout
     while time.time() < deadline:
         if event_file.exists():
@@ -165,11 +162,11 @@ def wait_for_event(event_file, request_id, timeout=8):
                         event = json.loads(line)
                     except ValueError:
                         continue
-                    if event.get("request_id") == request_id:
+                    if marker in event.get("payload_excerpt", "") or marker in event.get("query", ""):
                         return event
         time.sleep(0.25)
 
-    pytest.fail("No JSONL event found for request_id=%s in %s" % (request_id, event_file))
+    pytest.fail("No JSONL event found for marker=%s in %s" % (marker, event_file))
 
 
 def assert_payload_file_matches(payload_file, body):
@@ -226,13 +223,10 @@ def test_running_container_event_log_and_payload_volume(ready_container):
         data=body,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    request_id = headers.get("X-Request-ID")
     assert status == 200
-    assert request_id
 
-    event = wait_for_event(log_dir / EVENT_LOG_NAME, request_id)
+    event = wait_for_event(log_dir / EVENT_LOG_NAME, marker)
     assert EVENT_FIELDS.issubset(event)
-    assert event["request_id"] == request_id
     assert event["user_agent"] == USER_AGENT
     assert event["dest_ip"] not in {"0.0.0.0", "::"}
     assert event["browser_family"]

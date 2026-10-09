@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 try:
-    from flask import Flask, g, request
+    from flask import Flask, request
 except ImportError:
     print ("\n[X] Please install Flask:")
     print ("   $ pip install flask\n")
@@ -44,6 +44,8 @@ REQUIRED_OPTIONS = {
         'PAYLOAD_FILE_MODE': 0o640,
         'PAYLOAD_DIR': None,
         'EVENT_LOG_FILE': 'wordpot.json',
+        'EVENT_LOG_MAX_BYTES': 0,
+        'EVENT_LOG_BACKUP_COUNT': 0,
         'EVENT_LOG_EXCLUDE_HEALTHCHECKS': True,
         'EVENT_LOG_EXCLUDE_PATHS': ['/healthz'],
         'EVENT_DEST_IP': None,
@@ -121,15 +123,8 @@ if app.config.get('TRUST_PROXY_HEADERS'):
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 if app.config.get('HPFEEDS_ENABLED', False):
-    import hpfeeds
-    print('Connecting to hpfeeds broker {}:{}'.format(app.config['HPFEEDS_HOST'], app.config['HPFEEDS_PORT']))
-    app.config['hpfeeds_client'] = hpfeeds.new(
-        app.config['HPFEEDS_HOST'], 
-        app.config['HPFEEDS_PORT'], 
-        app.config['HPFEEDS_IDENT'], 
-        app.config['HPFEEDS_SECRET']
-    )
-    app.config['hpfeeds_client'].s.settimeout(0.01)
+    # The client connects lazily per worker process, see wordpot.events.
+    LOGGER.info('hpfeeds enabled for broker %s:%s', app.config['HPFEEDS_HOST'], app.config['HPFEEDS_PORT'])
 else:
     LOGGER.warning('hpfeeds is disabled')
 
@@ -156,8 +151,6 @@ def add_server_header(response):
     if server_header:
         response.headers['Server'] = server_header
     response.headers.setdefault('X-Content-Type-Options', 'nosniff')
-    if hasattr(g, 'request_id'):
-        response.headers['X-Request-ID'] = g.request_id
 
     return response
 

@@ -110,7 +110,7 @@ def test_homepage_exposes_modern_wordpress_fingerprint(client):
     assert "June 12, 2026" in body
     assert "June 28, 2012" not in body
     assert "two-column right-sidebar" not in body
-    assert response.headers["X-Request-ID"]
+    assert "X-Request-ID" not in response.headers
 
 
 def test_front_page_personas_are_profile_aware(client):
@@ -350,7 +350,8 @@ def test_destination_ip_skips_container_wildcard_bind_address():
             response_status=200,
         )
 
-    assert event["dest_ip"] == "honeypot.example"
+    assert "dest_ip" not in event
+    assert event["details"]["http_host"] == "honeypot.example"
 
 
 def test_large_payload_is_rejected(client):
@@ -360,7 +361,7 @@ def test_large_payload_is_rejected(client):
 
 
 def test_healthcheck_endpoint_is_quiet(client):
-    response = client.get("/healthz", headers={"X-Wordpot-Healthcheck": "1"})
+    response = client.get("/healthz", environ_base={"REMOTE_ADDR": "127.0.0.1"})
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "ok\n"
@@ -397,6 +398,7 @@ def test_event_schema_payload_truncation_and_payload_storage(tmp_path):
             environ_overrides={
                 "REMOTE_ADDR": "198.51.100.77",
                 "REMOTE_PORT": "54321",
+                "SERVER_ADDR": "192.0.2.10",
                 "SERVER_NAME": "192.0.2.10",
                 "SERVER_PORT": "8080",
             },
@@ -469,7 +471,7 @@ def test_event_schema_payload_truncation_and_payload_storage(tmp_path):
 
 
 def test_healthcheck_event_filter():
-    with app.test_request_context("/wp-json/", headers={"X-Wordpot-Healthcheck": "1"}):
+    with app.test_request_context("/healthz", environ_base={"REMOTE_ADDR": "127.0.0.1"}):
         event = log_event(
             request,
             current_profile(),

@@ -9,7 +9,7 @@ from flask import Response, abort, make_response, redirect, render_template, req
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from wordpot import app
-from wordpot.events import log_event
+from wordpot.events import is_loopback_request, log_event
 from wordpot.helpers import is_plugin_whitelisted, is_theme_whitelisted
 from wordpot.lures import detect_common_file_lure, detect_path_lure, lure_details
 from wordpot.profiles import (
@@ -379,8 +379,11 @@ def request_too_large(error):
     return rest_error("request_entity_too_large", "Request body is too large.", 413)
 
 
-@app.route("/healthz", methods=["GET", "HEAD", "OPTIONS"])
+@app.route("/healthz", methods=ALL_METHODS)
 def healthz():
+    # Container healthchecks call 127.0.0.1; everyone else sees a normal 404.
+    if not is_loopback_request(request):
+        return catchall("healthz")
     if request.method == "OPTIONS":
         response = text_response("", status=204, mimetype="text/plain; charset=UTF-8")
         response.headers["Allow"] = "GET, HEAD, OPTIONS"
