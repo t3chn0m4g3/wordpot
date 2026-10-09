@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import base64
 import json
 import re
 from datetime import datetime, timezone
 
-from flask import Response, abort, make_response, redirect, render_template, request
+from flask import abort, make_response, redirect, render_template, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from wordpot import app
+from wordpot.assets import ASSET_RE, IMAGE_RE, asset_response
 from wordpot.events import is_loopback_request, log_event
 from wordpot.helpers import is_plugin_whitelisted, is_theme_whitelisted
 from wordpot.lures import detect_common_file_lure, detect_path_lure, lure_details
@@ -20,9 +20,9 @@ from wordpot.profiles import (
 )
 
 
-ALL_METHODS = ["GET", "POST", "HEAD", "OPTIONS"]
-IMAGE_RE = re.compile(r"\.(?:gif|png|jpe?g|webp|svg)$", re.I)
-ASSET_RE = re.compile(r"\.(?:css|js|map|json|txt|xml)$", re.I)
+ALL_METHODS = ["GET", "POST", "HEAD", "OPTIONS", "PUT", "PATCH", "DELETE"]
+READ_METHODS = ["GET", "HEAD", "OPTIONS"]
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def site_url(path="/"):
@@ -290,18 +290,6 @@ Maintenance and compatibility release.
 """.format(**plugin)
 
 
-def plugin_main_file(plugin):
-    return """<?php
-/*
-Plugin Name: {name}
-Version: {version}
-Requires at least: {requires}
-Tested up to: {tested}
-*/
-defined( 'ABSPATH' ) || exit;
-""".format(**plugin)
-
-
 def theme_stylesheet(theme):
     css = """/*
 Theme Name: {name}
@@ -368,8 +356,46 @@ a {{ color: #1d4ed8; text-decoration-thickness: .08em; text-underline-offset: .1
     return css
 
 
-def tiny_gif():
-    return base64.b64decode("R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==")
+def static_response(path, profile, label="WordPress"):
+    return wp_headers(asset_response(path, label=label), profile)
+
+
+def forbidden_page(profile):
+    server = profile.get("server_header") or "Apache"
+    host = request.host.split(":", 1)[0]
+    port = request.environ.get("SERVER_PORT") or "80"
+    if server.lower().startswith("nginx"):
+        return "<html>\r\n<head><title>403 Forbidden</title></head>\r\n<body>\r\n<center><h1>403 Forbidden</h1></center>\r\n<hr><center>%s</center>\r\n</body>\r\n</html>\r\n" % server.split(" ", 1)[0]
+    if server.lower().startswith("litespeed"):
+        return '<!DOCTYPE html>\n<html style="height:100%%">\n<head><title> 403 Forbidden\r\n</title></head>\n<body style="color: #444; margin:0;font: normal 14px/20px Arial, Helvetica, sans-serif; height:100%%; background-color: #fff;">\n<div style="height:auto; min-height:100%%; "><div style="text-align: center; width:800px; margin-left: -400px; position:absolute; top: 30%%; left:50%%;">\n<h1 style="margin:0; font-size:150px; line-height:150px; font-weight:bold;">403</h1>\n<h2 style="margin-top:20px;font-size: 30px;">Forbidden\r\n</h2>\n<p>Access to this resource on the server is denied!</p>\n</div></div></body></html>\n'
+    return """<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>403 Forbidden</title>
+</head><body>
+<h1>Forbidden</h1>
+<p>You don't have permission to access this resource.</p>
+<hr>
+<address>%s Server at %s Port %s</address>
+</body></html>
+""" % (server, host, port)
+
+
+@app.errorhandler(403)
+def forbidden(error):
+    profile = current_profile()
+    response = make_response(forbidden_page(profile), 403)
+    response.headers["Content-Type"] = "text/html; charset=iso-8859-1"
+    return response
+
+
+@app.errorhandler(404)
+@app.errorhandler(405)
+def not_found(error):
+    # WordPress rewrites unknown paths to index.php and renders the theme 404.
+    profile = current_profile()
+    response = render_wp_template("404.html", profile, status=404, noindex=True)
+    response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
+    return response
 
 
 @app.errorhandler(RequestEntityTooLarge)
@@ -482,10 +508,8 @@ def admin(subpath=""):
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
-    if subpath.startswith("css/"):
-        return text_response("/* WordPress admin stylesheet */\n", mimetype="text/css; charset=UTF-8", profile=profile, noindex=True)
-    if subpath.startswith("images/"):
-        return Response(tiny_gif(), mimetype="image/png")
+    if subpath.startswith(("css/", "images/", "js/")) and (IMAGE_RE.search(subpath) or ASSET_RE.search(subpath)):
+        return static_response(request.path, profile, label="WordPress admin")
     if subpath == "admin-ajax.php":
         return admin_ajax()
 
@@ -539,28 +563,44 @@ def xmlrpc():
     return xml_response(fault, profile=profile)
 
 
-@app.route("/wp-json", methods=["GET", "HEAD", "OPTIONS", "POST"])
-@app.route("/wp-json/", methods=["GET", "HEAD", "OPTIONS", "POST"])
+@app.route("/wp-json", methods=ALL_METHODS)
+@app.route("/wp-json/", methods=ALL_METHODS)
 def rest_index():
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(["GET", "HEAD", "OPTIONS", "POST"])
-    if request.method == "POST":
+    if request.method in WRITE_METHODS:
         log_event(request, profile, component_type="core", component_slug="wp-json", technique="rest_post_probe", response_status=401)
         return rest_error("rest_cannot_access", "DRA: Only authenticated users can access the REST API.", 401)
     log_event(request, profile, component_type="core", component_slug="wp-json", technique="rest_index", response_status=200, include_payload=False)
     return json_response(rest_route_index(profile), profile=profile)
 
 
-@app.route("/wp-json/wp/v2/users", methods=["GET", "HEAD", "OPTIONS", "POST"])
-@app.route("/wp-json/wp/v2/users/<int:user_id>", methods=["GET", "HEAD", "OPTIONS", "POST"])
+REST_USER_WRITE_ERRORS = {
+    "POST": ("rest_cannot_create_user", "Sorry, you are not allowed to create new users."),
+    "PUT": ("rest_cannot_edit", "Sorry, you are not allowed to edit this user."),
+    "PATCH": ("rest_cannot_edit", "Sorry, you are not allowed to edit this user."),
+    "DELETE": ("rest_user_cannot_delete", "Sorry, you are not allowed to delete this user."),
+}
+
+REST_POST_WRITE_ERRORS = {
+    "POST": ("rest_cannot_create", "Sorry, you are not allowed to create posts as this user."),
+    "PUT": ("rest_cannot_edit", "Sorry, you are not allowed to edit this post."),
+    "PATCH": ("rest_cannot_edit", "Sorry, you are not allowed to edit this post."),
+    "DELETE": ("rest_cannot_delete", "Sorry, you are not allowed to delete this post."),
+}
+
+
+@app.route("/wp-json/wp/v2/users", methods=ALL_METHODS)
+@app.route("/wp-json/wp/v2/users/<int:user_id>", methods=ALL_METHODS)
 def rest_users(user_id=None):
     profile = current_profile()
     if request.method == "OPTIONS":
-        return options_response(["GET", "HEAD", "OPTIONS", "POST"])
-    if request.method == "POST":
+        return options_response(["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"])
+    if request.method in WRITE_METHODS:
         log_event(request, profile, component_type="core", component_slug="wp/v2/users", technique="rest_user_write_attempt", response_status=401)
-        return rest_error("rest_cannot_create_user", "Sorry, you are not allowed to create new users.", 401)
+        code, message = REST_USER_WRITE_ERRORS[request.method]
+        return rest_error(code, message, 401)
 
     authors = [rest_author(author) for author in profile.get("authors", [])]
     log_event(request, profile, component_type="core", component_slug="wp/v2/users", technique="rest_user_enumeration", response_status=200, include_payload=False)
@@ -582,15 +622,16 @@ def rest_application_passwords(user_id, tail=""):
     return rest_error("rest_cannot_view_application_passwords", "Sorry, you are not allowed to list application passwords for this user.", 401)
 
 
-@app.route("/wp-json/wp/v2/posts", methods=["GET", "HEAD", "OPTIONS", "POST"])
-@app.route("/wp-json/wp/v2/posts/<int:post_id>", methods=["GET", "HEAD", "OPTIONS", "POST"])
+@app.route("/wp-json/wp/v2/posts", methods=ALL_METHODS)
+@app.route("/wp-json/wp/v2/posts/<int:post_id>", methods=ALL_METHODS)
 def rest_posts(post_id=None):
     profile = current_profile()
     if request.method == "OPTIONS":
-        return options_response(["GET", "HEAD", "OPTIONS", "POST"])
-    if request.method == "POST":
+        return options_response(["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"])
+    if request.method in WRITE_METHODS:
         log_event(request, profile, component_type="core", component_slug="wp/v2/posts", technique="rest_post_write_attempt", response_status=401)
-        return rest_error("rest_cannot_create", "Sorry, you are not allowed to create posts as this user.", 401)
+        code, message = REST_POST_WRITE_ERRORS[request.method]
+        return rest_error(code, message, 401)
 
     posts = home_posts(profile)
     if post_id is not None:
@@ -718,7 +759,8 @@ def plugin(plugin, subpath=""):
     if path == "readme.txt":
         return text_response(plugin_readme(metadata), mimetype="text/plain; charset=UTF-8", profile=profile)
     if path in {metadata.get("main_file"), "%s.php" % plugin}:
-        return text_response(plugin_main_file(metadata), mimetype="text/plain; charset=UTF-8", profile=profile)
+        # PHP is executed, not served: the ABSPATH guard exits with an empty body.
+        return text_response("", profile=profile)
     lure = detect_path_lure("plugin", plugin, path, request)
     if lure:
         log_event(
@@ -735,10 +777,8 @@ def plugin(plugin, subpath=""):
         if request.method == "POST":
             return json_response({"success": False, "data": {"message": "Invalid nonce."}}, profile=profile)
         return text_response("0", mimetype="text/plain; charset=UTF-8", profile=profile)
-    if IMAGE_RE.search(path):
-        return Response(tiny_gif(), mimetype="image/gif")
-    if ASSET_RE.search(path):
-        return text_response("/* %s asset */\n" % plugin, mimetype="text/plain; charset=UTF-8", profile=profile)
+    if IMAGE_RE.search(path) or ASSET_RE.search(path):
+        return static_response(request.path, profile, label=metadata.get("name", plugin))
     abort(404)
 
 
@@ -788,10 +828,8 @@ def theme(theme, subpath=""):
         if request.method == "POST":
             return json_response({"success": False, "data": {"message": "Invalid nonce."}}, profile=profile)
         return text_response("0", mimetype="text/plain; charset=UTF-8", profile=profile)
-    if IMAGE_RE.search(path):
-        return Response(tiny_gif(), mimetype="image/gif")
-    if ASSET_RE.search(path):
-        return text_response("/* %s theme asset */\n" % theme, mimetype="text/plain; charset=UTF-8", profile=profile)
+    if IMAGE_RE.search(path) or ASSET_RE.search(path):
+        return static_response(request.path, profile, label=metadata.get("name", theme))
     abort(404)
 
 
@@ -818,7 +856,7 @@ def uploads(subpath=""):
         )
         abort(404)
     if IMAGE_RE.search(subpath):
-        return Response(tiny_gif(), mimetype="image/gif")
+        return static_response(request.path, profile)
     abort(404)
 
 
@@ -836,8 +874,8 @@ def wp_includes(subpath=""):
 <manifest xmlns="http://schemas.microsoft.com/wlw/manifest/weblog"><options><clientType>WordPress</clientType></options></manifest>
 """
         return xml_response(body, profile=profile)
-    if ASSET_RE.search(subpath):
-        return text_response("/* WordPress core asset */\n", mimetype="text/plain; charset=UTF-8", profile=profile)
+    if IMAGE_RE.search(subpath) or ASSET_RE.search(subpath):
+        return static_response(request.path, profile)
     abort(404)
 
 

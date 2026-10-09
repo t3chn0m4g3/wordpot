@@ -81,6 +81,15 @@ def ready_container():
     pytest.fail("Wordpot container did not become healthy at %s: %s" % (BASE_URL, last_error))
 
 
+def test_container_sends_exactly_one_server_header(ready_container):
+    request = Request(smoke_url("/"), headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=5) as response:
+        servers = response.headers.get_all("Server") or []
+
+    assert len(servers) == 1
+    assert "gunicorn" not in servers[0].lower()
+
+
 def test_running_container_http_surface(ready_container):
     # /healthz is reserved for the in-container healthcheck on 127.0.0.1.
     status, headers, body = http_request("/healthz")

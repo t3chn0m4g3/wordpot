@@ -2,6 +2,8 @@
 
 import re
 
+from wordpot.assets import is_static_asset
+
 
 LURE_PARAM_RE = re.compile(
     r"(url|uri|file|path|src|dest|redirect|download|import|export|upload|backup|log|template|doc|image|callback)",
@@ -37,7 +39,10 @@ def detect_path_lure(component_type, component_slug, subpath, req):
             "response_kind": "not_found",
         }
 
-    if LURE_PATH_RE.search(path) or details["lure_params"]:
+    # Static assets such as logo.png or file-upload.js are ordinary theme and
+    # plugin files; only treat them as lures when they carry lure parameters.
+    path_matches = LURE_PATH_RE.search(path) and not is_static_asset(path)
+    if path_matches or details["lure_params"]:
         return {
             "technique": "%s_lure_payload" % component_type,
             "details": details,

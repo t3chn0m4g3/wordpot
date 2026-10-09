@@ -97,7 +97,8 @@ logging_setup()
 # Building app
 # ------------
 
-app = Flask('wordpot')
+# No Flask /static/ route: assets are served under WordPress paths by views.
+app = Flask('wordpot', static_folder=None)
 app.url_map.converters['regex'] = RegexConverter
 
 # Import config from file

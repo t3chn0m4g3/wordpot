@@ -45,4 +45,4 @@ WORKDIR /opt/wordpot
 ENV WORDPOT_LOG_DIR=/opt/wordpot/logs \
     WORDPOT_PAYLOAD_DIR=/opt/wordpot/logs/payloads
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD python3 healthcheck.py
-CMD ["gunicorn", "--preload", "--bind", "0.0.0.0:80", "--workers", "2", "--threads", "4", "--access-logfile", "-", "--error-logfile", "-", "wordpot:app"]
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "wordpot:app"]
