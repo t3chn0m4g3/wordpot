@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Web File Manager</title></head>
+<body>
+<main>
+  <h1>Web File Manager</h1>
+  {% if invalid %}<p>Invalid credentials.</p>{% endif %}
+  <form method="post">
+    <label>Username <input name="username" autocomplete="username"></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password"></label>
+    <button type="submit" name="login" value="1">Sign in</button>
+  </form>
+</main>
+</body>
+</html>

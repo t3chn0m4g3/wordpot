@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en-US">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, follow" />
+    <title>Page not found &#8211; {{ vars['BLOGTITLE'] }}</title>
+    <link rel="alternate" type="application/rss+xml" title="{{ vars['BLOGTITLE'] }} &raquo; Feed" href="/feed/" />
+    <link rel="https://api.w.org/" href="/wp-json/" />
+    <link rel="EditURI" type="application/rsd+xml" title="RSD" href="/xmlrpc.php?rsd" />
+    <link rel="stylesheet" id="wp-block-library-css" href="/wp-includes/css/dist/block-library/style.min.css?ver={{ vars['VERSION'] }}" media="all" />
+    <link rel="stylesheet" id="{{ vars['THEME'] }}-style-css" href="/wp-content/themes/{{ vars['THEME'] }}/style.css?ver={{ vars['VERSION'] }}" media="all" />
+    <meta name="generator" content="WordPress {{ vars['VERSION'] }}" />
+</head>
+<body class="error404 wp-embed-responsive">
+<div class="wp-site-blocks">
+    <header class="wp-block-template-part site-header">
+        <div class="site-header__inner">
+            <div class="site-branding">
+                <p class="site-title"><a href="/" rel="home">{{ vars['BLOGTITLE'] }}</a></p>
+                <p class="site-description">{{ vars['BLOGSUBTITLE'] }}</p>
+            </div>
+        </div>
+    </header>
+
+    <main id="main" class="site-main wp-block-group">
+        <section class="section-band">
+            <h1 class="wp-block-heading">Page not found</h1>
+            <p>The page you are looking for doesn&#8217;t exist, or it has been moved. Please try searching using the form below.</p>
+            <form role="search" method="get" class="wp-block-search" action="/">
+                <label class="wp-block-search__label screen-reader-text" for="wp-block-search__input-1">Search</label>
+                <input class="wp-block-search__input" id="wp-block-search__input-1" placeholder="Search..." value="" type="search" name="s" required />
+                <button aria-label="Search" class="wp-block-search__button wp-element-button" type="submit">Search</button>
+            </form>
+        </section>
+    </main>
+
+    <footer class="wp-block-template-part site-footer">
+        <div class="site-footer__inner">
+            <p>{{ vars['BLOGTITLE'] }}. Powered by <a href="https://wordpress.org/" rel="generator">WordPress</a>.</p>
+        </div>
+    </footer>
+</div>
+</body>
+</html>

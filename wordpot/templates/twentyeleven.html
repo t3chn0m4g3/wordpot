@@ -15,19 +15,19 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width" />
-<title>{{ config['BLOGTITLE'] }} | {{ config['BLOGSUBTITLE'] }}</title>
+<title>{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }} | {{ vars.get('BLOGSUBTITLE', config['BLOGSUBTITLE']) }}</title>
 <link rel="profile" href="http://gmpg.org/xfn/11" />
-<link rel="stylesheet" type="text/css" media="all" href="{{ url_for('static', _external=True, filename='wp-content/themes/'+config['THEME']+'/style.css') }}" />
-<link rel="pingback" href=#" />
+<link rel="stylesheet" type="text/css" media="all" href="/wp-content/themes/{{ vars.get('THEME', config['THEME']) }}/style.css?ver={{ vars.get('VERSION', config['VERSION']) }}" />
+<link rel="pingback" href="/xmlrpc.php" />
 <!--[if lt IE 9]>
-<script src="{{ url_for('static', _external=True, filename='wp-content/themes/'+config['THEME']+'/js/html5.js') }}" type="text/javascript"></script>
+<script src="/wp-content/themes/{{ vars.get('THEME', config['THEME']) }}/js/html5.js?ver={{ vars.get('VERSION', config['VERSION']) }}" type="text/javascript"></script>
 <![endif]-->
-<meta name='robots' content='noindex,nofollow' />
-<link rel="alternate" type="application/rss+xml" title="{{ config['BLOGTITLE'] }} &raquo; Feed" href="#" />
-<link rel="alternate" type="application/rss+xml" title="{{ config['BLOGTITLE'] }} &raquo; Comments Feed" href="#" />
-<link rel="EditURI" type="application/rsd+xml" title="RSD" href="#" />
-<link rel="wlwmanifest" type="application/wlwmanifest+xml" href="#" /> 
-<meta name="generator" content="WordPress {{ config['VERSION'] }}" />
+<link rel="alternate" type="application/rss+xml" title="{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }} &raquo; Feed" href="/feed/" />
+<link rel="alternate" type="application/rss+xml" title="{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }} &raquo; Comments Feed" href="/comments/feed/" />
+<link rel="wlwmanifest" type="application/wlwmanifest+xml" href="/wp-includes/wlwmanifest.xml" />
+<meta name="generator" content="WordPress {{ vars.get('VERSION', config['VERSION']) }}" />
+<link rel='https://api.w.org/' href='/wp-json/' />
+<link rel="EditURI" type="application/rsd+xml" title="RSD" href="/xmlrpc.php?rsd" />
 	<style type="text/css">.recentcomments a{display:inline !important;padding:0 !important;margin:0 !important;}</style>
 </head>
 {% endblock %}
@@ -37,8 +37,8 @@
     {% block header %}
 	<header id="branding" role="banner">
 			<hgroup>
-				<h1 id="site-title"><span><a href="/" title="{{ config['BLOGTITLE'] }}" rel="home">{{ config['BLOGTITLE'] }}</a></span></h1>
-				<h2 id="site-description"><span><a href="/" title="{{ config['BLOGSUBTITLE'] }}" rel="home">{{ config['BLOGSUBTITLE'] }}</a></span></h2>
+				<h1 id="site-title"><span><a href="/" title="{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }}" rel="home">{{ vars.get('BLOGTITLE', config['BLOGTITLE']) }}</a></span></h1>
+				<h2 id="site-description"><span><a href="/" title="{{ vars.get('BLOGSUBTITLE', config['BLOGSUBTITLE']) }}" rel="home">{{ vars.get('BLOGSUBTITLE', config['BLOGSUBTITLE']) }}</a></span></h2>
 			</hgroup>	
     <form method="get" id="searchform" action="/">
 		<label for="s" class="assistive-text">Search</label>
@@ -71,7 +71,7 @@
             <h1 class="entry-title"><a href="/?p=1" title="Permalink to Hello world!" rel="bookmark">Hello world!</a></h1>
 
             <div class="entry-meta">
-                <span class="sep">Posted on </span><a href="/?p=1" title="9:57 am" rel="bookmark"><time class="entry-date" datetime="2012-06-28T09:57:14+00:00" pubdate>June 28, 2012</time></a><span class="by-author"> <span class="sep"> by </span> <span class="author vcard"><a class="url fn n" href="/?author=1" title="View all posts by {{ config['AUTHORS'][0] }}" rel="author">{{ config['AUTHORS'][0] }}</a></span></span>			
+                <span class="sep">Posted on </span><a href="/?p=1" title="9:14 am" rel="bookmark"><time class="entry-date" datetime="2026-06-12T09:14:00+00:00" pubdate>June 12, 2026</time></a><span class="by-author"> <span class="sep"> by </span> <span class="author vcard"><a class="url fn n" href="/?author=1" title="View all posts by {{ vars.get('AUTHORS', config['AUTHORS'])[0] }}" rel="author">{{ vars.get('AUTHORS', config['AUTHORS'])[0] }}</a></span></span>
             </div><!-- .entry-meta -->
 			
 			<div class="comments-link">

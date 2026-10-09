@@ -1,2 +1,6 @@
 hpfeeds-threatstream==1.1
-user-agents
+Flask>=3.0,<4
+gunicorn>=22,<24
+Werkzeug>=3.0,<4
+user-agents>=2.2,<3
+defusedxml>=0.7.1,<1

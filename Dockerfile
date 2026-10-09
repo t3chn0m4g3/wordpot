@@ -23,6 +23,7 @@ RUN apk -U --no-cache add \
 # Install wordpot from GitHub and setup
     mkdir -p /opt && \
     cd /opt/wordpot && \
+    mkdir -p /opt/wordpot/logs /opt/wordpot/logs/payloads && \
     pip3 install --break-system-packages -r requirements.txt && \
     setcap cap_net_bind_service=+ep $(readlink -f $(type -P python3)) && \
 #
@@ -41,4 +42,7 @@ RUN apk -U --no-cache add \
 STOPSIGNAL SIGINT
 USER wordpot:wordpot
 WORKDIR /opt/wordpot
-CMD ["/usr/bin/python3","wordpot.py", "--host", "0.0.0.0", "--port", "80", "--title", "Wordpress"]
+ENV WORDPOT_LOG_DIR=/opt/wordpot/logs \
+    WORDPOT_PAYLOAD_DIR=/opt/wordpot/logs/payloads
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD python3 healthcheck.py
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "wordpot:app"]

@@ -1,69 +1,118 @@
-<!DOCTYPE html>
-	<html xmlns="http://www.w3.org/1999/xhtml" dir="ltr" lang="en-US">
-	<head>
-	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    <title>{{ config['BLOGTITLE'] }} &rsaquo; Log In</title>
-    <link rel='stylesheet' id='wp-admin-css'  href='{{ url_for("static", _external=True, filename="wp-admin/css/wp-admin.css") }}' type='text/css' media='all' />
-    <link rel='stylesheet' id='colors-fresh-css'  href='{{ url_for("static", _external=True, filename="wp-admin/css/colors-fresh.css") }}' type='text/css' media='all' />
-    <meta name='robots' content='noindex,nofollow' />
-{% if vars['BADLOGIN'] %}
-<script type="text/javascript">
-addLoadEvent = function(func){if(typeof jQuery!="undefined")jQuery(document).ready(func);else if(typeof wpOnload!='function'){wpOnload=func;}else{var oldonload=wpOnload;wpOnload=function(){oldonload();func();}}};
-function s(id,pos){g(id).left=pos+'px';}
-function g(id){return document.getElementById(id).style;}
-function shake(id,a,d){c=a.shift();s(id,c);if(a.length>0){setTimeout(function(){shake(id,a,d);},d);}else{try{g(id).position='static';wp_attempt_focus();}catch(e){}}}
-addLoadEvent(function(){ var p=new Array(15,30,15,0,-15,-30,-15,0);p=p.concat(p.concat(p));var i=document.forms[0].id;g(i).position='relative';shake(i,p,20);});
-</script>
-{% endif %}
-	</head>
-	<body class="login">
-	<div id="login">
-		<h1><a href="http://wordpress.org/" title="Powered by WordPress">Test</a></h1>
-        {% if vars['BADLOGIN'] %}
-        <div id="login_error">	<strong>ERROR</strong>: Invalid username. <a href="wp-login.php?action=lostpassword" title="Password Lost and Found">Lost your password</a>?<br />
-</div>
+<!doctype html>
+<html lang="en-US">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log In &lsaquo; {{ vars.get('BLOGTITLE', config['BLOGTITLE']) }} &#8212; WordPress</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="stylesheet" id="dashicons-css" href="/wp-includes/css/dashicons.min.css?ver={{ vars.get('VERSION', config['VERSION']) }}" media="all" />
+    <link rel="stylesheet" id="buttons-css" href="/wp-includes/css/buttons.min.css?ver={{ vars.get('VERSION', config['VERSION']) }}" media="all" />
+    <link rel="stylesheet" id="forms-css" href="/wp-admin/css/forms.min.css?ver={{ vars.get('VERSION', config['VERSION']) }}" media="all" />
+    <link rel="stylesheet" id="login-css" href="/wp-admin/css/login.min.css?ver={{ vars.get('VERSION', config['VERSION']) }}" media="all" />
+    <style>
+    html{background:#f0f0f1}
+    body.login{min-height:100vh;margin:0;color:#1d2327;background:linear-gradient(135deg,#f6f7f7 0%,#e7ecf3 100%);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif}
+    body.login div#login{width:360px;max-width:calc(100% - 40px);padding:7vh 0 0;margin:auto}
+    .login h1{margin:0 0 24px;text-align:center}
+    .login h1 a{display:inline-flex;align-items:center;justify-content:center;width:84px;height:84px;border-radius:50%;background:#fff;color:#1d2327;text-indent:-9999px;overflow:hidden;text-decoration:none;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+    .login h1 a:before{content:"W";text-indent:0;font-family:Georgia,serif;font-size:48px;font-weight:700;color:#3858e9}
+    .login form{margin-top:20px;padding:28px 24px 24px;background:#fff;border:1px solid #c3c4c7;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    .login label{display:block;margin-bottom:6px;color:#1d2327;font-size:14px;line-height:1.5}
+    .login .input,.login input[type=text],.login input[type=password]{box-sizing:border-box;width:100%;min-height:44px;margin:0 0 16px;padding:8px 12px;border:1px solid #8c8f94;border-radius:4px;background:#fff;color:#2c3338;font-size:20px;line-height:1.333}
+    .login .input:focus{border-color:#2271b1;box-shadow:0 0 0 1px #2271b1;outline:2px solid transparent}
+    .user-pass-wrap{margin-bottom:12px}
+    .wp-pwd{position:relative}
+    .wp-pwd .input{padding-right:48px;margin-bottom:0}
+    .wp-hide-pw{position:absolute;right:0;top:0;width:44px;height:44px;border:0;background:transparent;color:#50575e;cursor:pointer}
+    .dashicons{display:inline-block;width:20px;height:20px;vertical-align:middle}
+    .dashicons-visibility:before{content:"\25cf";font-size:20px}
+    .forgetmenot{float:left;margin:0 0 16px}
+    .forgetmenot input{margin:0 6px 0 0}
+    .submit{clear:both;margin:0;padding:0}
+    .button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 12px;border:1px solid #2271b1;border-radius:3px;background:#f6f7f7;color:#2271b1;text-decoration:none;cursor:pointer}
+    .button-primary{float:right;min-height:36px;padding:0 16px;background:#2271b1;border-color:#2271b1;color:#fff;font-weight:600}
+    .button-primary:hover{background:#135e96;border-color:#135e96}
+    .login #nav,.login #backtoblog{font-size:13px;text-align:center;margin:18px 0 0}
+    .login #nav a,.login #backtoblog a{color:#50575e;text-decoration:none}
+    .login #nav a:hover,.login #backtoblog a:hover{color:#135e96}
+    .notice{margin:0 0 16px;padding:12px 14px;background:#fff;border:1px solid #c3c4c7;border-left-width:4px;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+    .notice p{margin:.25em 0;font-size:13px;line-height:1.5}
+    .notice-error{border-left-color:#d63638}
+    .message{border-left-color:#72aee6}
+    .language-switcher{margin:24px auto 0;text-align:center}
+    .language-switcher label{display:inline;margin:0 6px 0 0}
+    .language-switcher select{min-height:32px;border:1px solid #8c8f94;border-radius:3px;background:#fff}
+    .screen-reader-text{position:absolute;margin:-1px;padding:0;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+    @media (max-width:420px){body.login div#login{padding-top:24px}.login form{padding:22px 18px}.button-primary{float:none;width:100%;margin-top:10px}.forgetmenot{float:none}}
+    </style>
+</head>
+<body class="login no-js login-action-{{ vars.get('LOGIN_ACTION', 'login') }} wp-core-ui locale-en-us">
+<script>document.body.className=document.body.className.replace('no-js','js');</script>
+<div id="login">
+    <h1><a href="https://wordpress.org/">Powered by WordPress</a></h1>
+
+    {% if vars.get('LOGIN_ACTION') == 'lostpassword' %}
+    <div class="notice message"><p>Please enter your username or email address. You will receive an email message with instructions on how to reset your password.</p></div>
+    {% endif %}
+
+    {% if vars['BADLOGIN'] %}
+    <div id="login_error" class="notice notice-error" role="alert">
+        {% if vars.get('LOGIN_ERROR') == 'empty_username' %}
+        <p><strong>Error:</strong> The username field is empty.</p>
+        {% elif vars.get('LOGIN_ERROR') == 'empty_password' %}
+        <p><strong>Error:</strong> The password field is empty.</p>
+        {% elif vars.get('LOGIN_ERROR') == 'incorrect_password' %}
+        <p><strong>Error:</strong> The password you entered for the username <strong>{{ vars['LOGIN_USERNAME'] }}</strong> is incorrect. <a href="/wp-login.php?action=lostpassword">Lost your password?</a></p>
+        {% else %}
+        <p><strong>Error:</strong> The username <strong>{{ vars.get('LOGIN_USERNAME', '') }}</strong> is not registered on this site. If you are unsure of your username, try your email address instead.</p>
         {% endif %}
-<form name="loginform" id="loginform" action="wp-login.php" method="post">
-	<p>
-		<label for="user_login">Username<br />
-		<input type="text" name="log" id="user_login" class="input" value="" size="20" tabindex="10" /></label>
-	</p>
-	<p>
-		<label for="user_pass">Password<br />
-		<input type="password" name="pwd" id="user_pass" class="input" value="" size="20" tabindex="20" /></label>
-	</p>
-	<p class="forgetmenot"><label for="rememberme"><input name="rememberme" type="checkbox" id="rememberme" value="forever" tabindex="90" /> Remember Me</label></p>
-	<p class="submit">
-		<input type="submit" name="wp-submit" id="wp-submit" class="button-primary" value="Log In" tabindex="100" />
-		<input type="hidden" name="redirect_to" value=/wp-admin/" />
-		<input type="hidden" name="testcookie" value="1" />
-	</p>
-</form>
+    </div>
+    {% endif %}
 
-<p id="nav">
-<a href="/wp-login.php?action=lostpassword" title="Password Lost and Found">Lost your password?</a>
-</p>
+    <form name="loginform" id="loginform" action="/wp-login.php" method="post">
+        <p>
+            <label for="user_login">Username or Email Address</label>
+            <input type="text" name="log" id="user_login" class="input" value="{{ vars.get('LOGIN_USERNAME', '') }}" size="20" autocapitalize="off" autocomplete="username" required="required" />
+        </p>
 
-<script type="text/javascript">
-function wp_attempt_focus(){
-setTimeout( function(){ try{
-d = document.getElementById('user_login');
-d.focus();
-d.select();
-} catch(e){}
-}, 200);
-}
+        <div class="user-pass-wrap">
+            <label for="user_pass">Password</label>
+            <div class="wp-pwd">
+                <input type="password" name="pwd" id="user_pass" class="input password-input" value="" size="20" autocomplete="current-password" spellcheck="false" required="required" />
+                <button type="button" class="button button-secondary wp-hide-pw hide-if-no-js" aria-label="Show password">
+                    <span class="dashicons dashicons-visibility" aria-hidden="true"></span>
+                </button>
+            </div>
+        </div>
 
-wp_attempt_focus();
-if(typeof wpOnload=='function')wpOnload();
+        <p class="forgetmenot">
+            <input name="rememberme" type="checkbox" id="rememberme" value="forever" />
+            <label for="rememberme">Remember Me</label>
+        </p>
+
+        <p class="submit">
+            <input type="submit" name="wp-submit" id="wp-submit" class="button button-primary button-large" value="Log In" />
+            <input type="hidden" name="redirect_to" value="{{ vars.get('REDIRECT_TO', '/wp-admin/') }}" />
+            <input type="hidden" name="testcookie" value="1" />
+        </p>
+    </form>
+
+    <p id="nav"><a href="/wp-login.php?action=lostpassword">Lost your password?</a></p>
+    <p id="backtoblog"><a href="/">&larr; Go to {{ vars.get('BLOGTITLE', config['BLOGTITLE']) }}</a></p>
+
+    <form class="language-switcher" method="get" action="/wp-login.php">
+        <label for="language-switcher-locales"><span class="dashicons dashicons-translation" aria-hidden="true"></span><span class="screen-reader-text">Language</span></label>
+        <select name="wp_lang" id="language-switcher-locales">
+            <option value="en_US" selected="selected">English (United States)</option>
+        </select>
+        <input type="submit" class="button" value="Change" />
+    </form>
+</div>
+<script>
+setTimeout(function(){
+    var input=document.getElementById('user_login');
+    if(input){input.focus();}
+},200);
 </script>
-
-<p id="backtoblog"><a href="/" title="Are you lost?">&larr; Back to {{ blogtitle }}</a></p>
-	
-	</div>
-
-	
-		<div class="clear"></div>
-	</body>
-	</html>
-	
+</body>
+</html>
