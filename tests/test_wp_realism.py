@@ -52,7 +52,7 @@ def test_timthumb_with_external_src_is_logged_but_never_fetched(client, events, 
     assert "src=http://evil.example/x.php&amp;w=10" in body
     event = events()[0]
     assert event["technique"] == "timthumb_probe"
-    assert event["details"]["lure_params"]["src"] == "http://evil.example/x.php"
+    assert event["details"]["lure_params"] == [{"name": "src", "value": "http://evil.example/x.php"}]
 
 
 def test_timthumb_query_string_is_escaped(client):

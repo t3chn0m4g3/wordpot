@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 APP_NAME = "Wordpot"
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.1"
 APP_DISPLAY_NAME = "%s %s" % (APP_NAME, APP_VERSION)
 
 ASCII_ART = r"""

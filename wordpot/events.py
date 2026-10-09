@@ -374,6 +374,11 @@ def credential_pair(credentials, details=None):
     credentials = credentials or {}
     details = details or {}
 
+    # A single XML-RPC login carries its pair in details only; a multicall
+    # with several pairs keeps them there and sets no username / password.
+    pairs = details.get("credential_pairs")
+    single = pairs[0] if isinstance(pairs, list) and len(pairs) == 1 and isinstance(pairs[0], dict) else {}
+
     username_sources = [
         details.get("username"),
         credentials.get("username"),
@@ -381,6 +386,7 @@ def credential_pair(credentials, details=None):
         credentials.get("log"),
         credentials.get("user"),
         credentials.get("basic_username"),
+        single.get("username"),
     ]
     password_sources = [
         details.get("password"),
@@ -389,6 +395,7 @@ def credential_pair(credentials, details=None):
         credentials.get("pwd"),
         credentials.get("pass"),
         credentials.get("basic_password"),
+        single.get("password"),
     ]
 
     username = next((value for value in username_sources if value is not None), None)

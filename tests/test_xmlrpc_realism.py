@@ -105,3 +105,38 @@ def test_xmlrpc_rejects_entity_expansion_payload(client):
 def test_request_body_limits_default_to_one_mib():
     assert app.config["MAX_CONTENT_LENGTH"] == 1024 * 1024
     assert app.config["PAYLOAD_STORAGE_MAX_BYTES"] == 1024 * 1024
+
+
+def _logged_events(monkeypatch):
+    from wordpot import events as event_module
+
+    logged = []
+    monkeypatch.setattr(event_module, "publish_event", logged.append)
+    return logged
+
+
+def test_xmlrpc_login_sets_username_and_password(client, monkeypatch):
+    logged = _logged_events(monkeypatch)
+
+    _call(client, "wp.getUsersBlogs", ("alice", "secret"))
+
+    event = logged[-1]
+    assert event["technique"] == "xmlrpc_login"
+    assert event["username"] == "alice"
+    assert event["password"] == "secret"
+
+
+def test_xmlrpc_multicall_with_several_pairs_sets_no_username(client, monkeypatch):
+    logged = _logged_events(monkeypatch)
+    calls = [
+        {"methodName": "wp.getUsersBlogs", "params": ["user%d" % i, "pass%d" % i]}
+        for i in range(2)
+    ]
+
+    _call(client, "system.multicall", (calls,))
+
+    event = logged[-1]
+    assert event["technique"] == "xmlrpc_multicall"
+    assert len(event["details"]["credential_pairs"]) == 2
+    assert "username" not in event
+    assert "password" not in event

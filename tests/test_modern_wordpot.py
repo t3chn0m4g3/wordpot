@@ -236,6 +236,21 @@ def test_lure_endpoints_capture_but_do_not_accept_real_actions(client):
     assert "Web File Manager" in upload.get_data(as_text=True)
 
 
+def test_lure_params_are_a_list_and_client_names_never_become_keys(client, monkeypatch):
+    captured = []
+    monkeypatch.setattr(events_module, "publish_event", lambda event: captured.append(event))
+
+    client.get("/wp-admin/admin-ajax.php?action=duplicator_download&file=../../wp-config.php&Evil.Url=http://x")
+    client.get("/wp-admin/admin-ajax.php?action=heartbeat")
+
+    probe, plain = captured[-2], captured[-1]
+    assert probe["details"]["lure_params"] == [
+        {"name": "file", "value": "../../wp-config.php"},
+        {"name": "Evil.Url", "value": "http://x"},
+    ]
+    assert "lure_params" not in plain["details"]
+
+
 def test_timthumb_probe_is_modern_lure_event(client, monkeypatch):
     captured = []
     monkeypatch.setattr(events_module, "publish_event", lambda event: captured.append(event))
@@ -254,7 +269,7 @@ def test_timthumb_probe_is_modern_lure_event(client, monkeypatch):
     assert event["component_type"] == "plugin"
     assert event["component_slug"] == plugin_slug
     assert event["details"]["matched_pattern"] == "timthumb_uploadify"
-    assert event["details"]["lure_params"]["src"] == "http://169.254.169.254/latest/meta-data/"
+    assert event["details"]["lure_params"] == [{"name": "src", "value": "http://169.254.169.254/latest/meta-data/"}]
 
 
 def test_no_legacy_plugin_events_are_emitted(client, monkeypatch):
@@ -501,7 +516,7 @@ def test_null_and_empty_string_event_fields_are_omitted():
             component_slug=None,
             technique="rest_index",
             response_status=200,
-            details={"action": None, "lure_params": {"file": None, "q": ""}},
+            details={"action": None, "lure_params": [{"name": "file", "value": None}, {"name": "q", "value": ""}]},
             include_payload=False,
         )
 
@@ -518,8 +533,7 @@ def test_null_and_empty_string_event_fields_are_omitted():
     assert "password" not in event
     assert "credentials_observed" not in event
     assert "action" not in event["details"]
-    assert "file" not in event["details"]["lure_params"]
-    assert "q" not in event["details"]["lure_params"]
+    assert event["details"]["lure_params"] == [{"name": "file"}, {"name": "q"}]
     assert event["payload_size"] == 0
     assert event["payload_stored"] is False
 
@@ -552,7 +566,7 @@ def test_cli_version_outputs_version_without_startup_banner():
         timeout=10,
     )
 
-    assert result.stdout.strip() == "Wordpot 3.0.0"
+    assert result.stdout.strip() == "Wordpot 3.0.1"
 
 
 def test_startup_banner_flushes_stdout(monkeypatch):
@@ -567,7 +581,7 @@ def test_startup_banner_flushes_stdout(monkeypatch):
 
     assert printed
     assert printed[0][1]["flush"] is True
-    assert "Wordpot 3.0.0" in printed[0][0][0]
+    assert "Wordpot 3.0.1" in printed[0][0][0]
 
 
 def test_readme_documents_config_and_event_fields():
