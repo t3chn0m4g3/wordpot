@@ -113,7 +113,11 @@ def user_agent_from_request(req):
 
 
 def user_agent_details(req):
-    parsed = parse_user_agent(user_agent_from_request(req))
+    try:
+        parsed = parse_user_agent(user_agent_from_request(req))
+    except Exception as exc:
+        LOGGER.warning("Unable to parse User-Agent: %s", exc)
+        return {}
     return {
         "browser_family": parsed.browser.family,
         "browser_version": parsed.browser.version_string,

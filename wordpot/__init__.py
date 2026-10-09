@@ -30,11 +30,6 @@ class RegexConverter(BaseConverter):
 REQUIRED_OPTIONS = {
         'HOST':  '127.0.0.1',
         'PORT':  '80',
-        'THEME': 'twentytwentyfive',
-        'BLOGTITLE': 'Random Rambling',
-        'BLOGSUBTITLE': 'Just another WordPress site',
-        'VERSION': '7.0',
-        'AUTHORS': ['admin'],
         'INTERACTION_DEPTH': 'medium',
         'MAX_CONTENT_LENGTH': 65536,
         'PAYLOAD_EXCERPT_BYTES': 4096,
@@ -106,19 +101,31 @@ conffile = os.path.join(os.path.abspath(os.path.dirname(__file__)), '../wordpot.
 LOGGER.info('Loading conf file: %s', conffile) # %s doesn't work with python3
 try:
     app.config.from_pyfile(conffile)
-except:
-    LOGGER.error('Can\'t load conf file')
+except Exception as exc:
+    LOGGER.error('Can\'t load conf file %s: %s', conffile, exc)
 check_options()
 app.config['MAX_CONTENT_LENGTH'] = int(app.config.get('MAX_CONTENT_LENGTH', 65536))
 app.config['PAYLOAD_STORAGE_MAX_BYTES'] = int(app.config.get('PAYLOAD_STORAGE_MAX_BYTES') or app.config['MAX_CONTENT_LENGTH'])
-from wordpot.profiles import initialize_startup_profile
-initialize_startup_profile(app)
-if os.environ.get('WORDPOT_SUPPRESS_BANNER') not in {'1', 'true', 'yes'}:
-    emit_startup_banner(
-        LOGGER,
-        profile_id=app.config.get('_STARTUP_PROFILE_ID') or app.config.get('PROFILE_ID'),
-        log_dir=log_dir(),
-    )
+
+
+def startup():
+    """Select the startup profile and print the banner (once per process tree)."""
+    from wordpot.profiles import initialize_startup_profile
+
+    initialize_startup_profile(app)
+    if os.environ.get('WORDPOT_SUPPRESS_BANNER') not in {'1', 'true', 'yes'}:
+        emit_startup_banner(
+            LOGGER,
+            profile_id=app.config.get('_STARTUP_PROFILE_ID') or app.config.get('PROFILE_ID'),
+            log_dir=log_dir(),
+        )
+
+
+# Gunicorn imports the app once in the master (--preload), so the profile is
+# chosen before workers fork. wordpot.py defers this until CLI options such as
+# --version and --profile have been parsed.
+if os.environ.get('WORDPOT_DEFER_STARTUP') not in {'1', 'true', 'yes'}:
+    startup()
 
 if app.config.get('TRUST_PROXY_HEADERS'):
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)

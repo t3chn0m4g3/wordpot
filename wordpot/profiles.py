@@ -588,11 +588,39 @@ def normalize_author(author, default_id):
     return normalized
 
 
+# Global wordpot.conf / CLI settings that, when set, override every profile.
+PROFILE_OVERRIDE_KEYS = {
+    "BLOGTITLE": "blog_title",
+    "BLOGSUBTITLE": "blog_subtitle",
+    "VERSION": "core_version",
+    "SERVER": "server_header",
+    "THEME": "theme",
+    "AUTHORS": "authors",
+}
+
+_PROFILE_CACHE = {}
+
+
+def profile_overrides(app):
+    return {
+        field: app.config[key]
+        for key, field in PROFILE_OVERRIDE_KEYS.items()
+        if app.config.get(key)
+    }
+
+
 def configured_profiles(app):
     profiles = app.config.get("PROFILES") or DEFAULT_PROFILES
     if isinstance(profiles, dict):
         profiles = list(profiles.values())
-    return [normalize_profile(profile) for profile in profiles]
+    overrides = profile_overrides(app)
+    cache_key = (id(profiles), json.dumps(profiles, sort_keys=True, default=str), json.dumps(overrides, sort_keys=True, default=str))
+    cached = _PROFILE_CACHE.get(cache_key)
+    if cached is None:
+        cached = [normalize_profile({**profile, **overrides}) for profile in profiles]
+        _PROFILE_CACHE.clear()
+        _PROFILE_CACHE[cache_key] = cached
+    return copy.deepcopy(cached)
 
 
 def client_ip_from_request(req):

@@ -5,7 +5,6 @@ import logging.handlers
 import os
 
 LOGGER = logging.getLogger('wordpot-logger')
-EVENT_LOGGER = logging.getLogger('wordpot-events')
 
 
 def log_dir():

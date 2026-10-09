@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import json
-import re
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from flask import abort, make_response, redirect, render_template, request
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -10,8 +10,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from wordpot import app
 from wordpot.assets import ASSET_RE, IMAGE_RE, asset_response
 from wordpot.events import is_loopback_request, log_event
-from wordpot.helpers import is_plugin_whitelisted, is_theme_whitelisted
-from wordpot.lures import detect_common_file_lure, detect_path_lure, lure_details
+from wordpot.lures import COMMON_FILE_RE, detect_common_file_lure, detect_path_lure, lure_details
 from wordpot.profiles import (
     current_profile,
     plugin_for_slug,
@@ -510,11 +509,8 @@ def admin(subpath=""):
         return options_response(ALL_METHODS)
     if subpath.startswith(("css/", "images/", "js/")) and (IMAGE_RE.search(subpath) or ASSET_RE.search(subpath)):
         return static_response(request.path, profile, label="WordPress admin")
-    if subpath == "admin-ajax.php":
-        return admin_ajax()
-
     log_event(request, profile, component_type="core", component_slug="wp-admin", technique="admin_probe", response_status=302)
-    target = "/wp-login.php?redirect_to=%s&reauth=1" % site_url("/wp-admin/")
+    target = "/wp-login.php?redirect_to=%s&reauth=1" % quote(site_url("/wp-admin/"), safe="")
     response = redirect(target, code=302)
     response.headers["X-Redirect-By"] = "WordPress"
     return wp_headers(response, profile, noindex=True)
@@ -740,46 +736,66 @@ def plugins_directory():
     abort(403)
 
 
+def component_event(profile, component_type, slug, status, technique, details, response=None):
+    """Log exactly one event for a component request, then respond or abort."""
+    log_event(
+        request,
+        profile,
+        component_type=component_type,
+        component_slug=slug,
+        technique=technique,
+        response_status=status,
+        details=details,
+    )
+    if response is None:
+        abort(status)
+    return response
+
+
+def lure_response(lure, profile):
+    if request.method == "POST":
+        return json_response({"success": False, "data": {"message": "Invalid nonce."}}, profile=profile)
+    return text_response("0", mimetype="text/plain; charset=UTF-8", profile=profile)
+
+
+def component_lure(component_type, slug, path, profile):
+    lure = detect_path_lure(component_type, slug, path, request)
+    if not lure:
+        return None
+    if lure["response_kind"] == "not_found":
+        return component_event(profile, component_type, slug, lure["response_status"], lure["technique"], lure["details"])
+    return component_event(profile, component_type, slug, lure["response_status"], lure["technique"], lure["details"], lure_response(lure, profile))
+
+
 @app.route("/wp-content/plugins/<plugin>", defaults={"subpath": ""}, methods=ALL_METHODS)
 @app.route("/wp-content/plugins/<plugin>/<path:subpath>", methods=ALL_METHODS)
 def plugin(plugin, subpath=""):
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
-    log_event(request, profile, component_type="plugin", component_slug=plugin, technique="plugin_probe", response_status=None, details={"subpath": subpath})
 
-    if not is_plugin_whitelisted(plugin):
-        abort(404)
-
-    metadata = plugin_for_slug(profile, plugin) or {"slug": plugin, "name": plugin, "version": "1.0.0", "main_file": "%s.php" % plugin}
     path = subpath.strip("/")
+    details = {"subpath": path}
+    metadata = plugin_for_slug(profile, plugin)
 
+    if metadata is None:
+        # Not installed: still classify exploit attempts against the slug.
+        lure = detect_path_lure("plugin", plugin, path, request)
+        technique = lure["technique"] if lure else "plugin_probe"
+        return component_event(profile, "plugin", plugin, 404, technique, lure["details"] if lure else details)
     if not path:
-        abort(403)
+        return component_event(profile, "plugin", plugin, 403, "plugin_probe", details)
     if path == "readme.txt":
-        return text_response(plugin_readme(metadata), mimetype="text/plain; charset=UTF-8", profile=profile)
+        return component_event(profile, "plugin", plugin, 200, "plugin_probe", details, text_response(plugin_readme(metadata), mimetype="text/plain; charset=UTF-8", profile=profile))
     if path in {metadata.get("main_file"), "%s.php" % plugin}:
         # PHP is executed, not served: the ABSPATH guard exits with an empty body.
-        return text_response("", profile=profile)
-    lure = detect_path_lure("plugin", plugin, path, request)
-    if lure:
-        log_event(
-            request,
-            profile,
-            component_type="plugin",
-            component_slug=plugin,
-            technique=lure["technique"],
-            response_status=lure["response_status"],
-            details=lure["details"],
-        )
-        if lure["response_kind"] == "not_found":
-            abort(404)
-        if request.method == "POST":
-            return json_response({"success": False, "data": {"message": "Invalid nonce."}}, profile=profile)
-        return text_response("0", mimetype="text/plain; charset=UTF-8", profile=profile)
+        return component_event(profile, "plugin", plugin, 200, "plugin_probe", details, text_response("", profile=profile))
+    lured = component_lure("plugin", plugin, path, profile)
+    if lured is not None:
+        return lured
     if IMAGE_RE.search(path) or ASSET_RE.search(path):
-        return static_response(request.path, profile, label=metadata.get("name", plugin))
-    abort(404)
+        return component_event(profile, "plugin", plugin, 200, "plugin_probe", details, static_response(request.path, profile, label=metadata.get("name", plugin)))
+    return component_event(profile, "plugin", plugin, 404, "plugin_probe", details)
 
 
 @app.route("/wp-content/themes", methods=ALL_METHODS)
@@ -798,39 +814,28 @@ def theme(theme, subpath=""):
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
-    log_event(request, profile, component_type="theme", component_slug=theme, technique="theme_probe", response_status=None, details={"subpath": subpath})
 
-    if not is_theme_whitelisted(theme):
-        abort(404)
-
-    metadata = theme_for_slug(profile, theme) or {"slug": theme, "name": theme, "version": "1.0.0", "author": "WordPress.org"}
     path = subpath.strip("/")
+    details = {"subpath": path}
+    metadata = theme_for_slug(profile, theme)
 
+    if metadata is None:
+        lure = detect_path_lure("theme", theme, path, request)
+        technique = lure["technique"] if lure else "theme_probe"
+        return component_event(profile, "theme", theme, 404, technique, lure["details"] if lure else details)
     if not path:
-        abort(403)
+        return component_event(profile, "theme", theme, 403, "theme_probe", details)
     if path == "style.css":
-        return text_response(theme_stylesheet(metadata), mimetype="text/css; charset=UTF-8", profile=profile)
+        return component_event(profile, "theme", theme, 200, "theme_probe", details, text_response(theme_stylesheet(metadata), mimetype="text/css; charset=UTF-8", profile=profile))
     if path == "readme.txt":
-        return text_response("%s\nStable tag: %s\n" % (metadata["name"], metadata["version"]), mimetype="text/plain; charset=UTF-8", profile=profile)
-    lure = detect_path_lure("theme", theme, path, request)
-    if lure:
-        log_event(
-            request,
-            profile,
-            component_type="theme",
-            component_slug=theme,
-            technique=lure["technique"],
-            response_status=lure["response_status"],
-            details=lure["details"],
-        )
-        if lure["response_kind"] == "not_found":
-            abort(404)
-        if request.method == "POST":
-            return json_response({"success": False, "data": {"message": "Invalid nonce."}}, profile=profile)
-        return text_response("0", mimetype="text/plain; charset=UTF-8", profile=profile)
+        body = "%s\nStable tag: %s\n" % (metadata["name"], metadata["version"])
+        return component_event(profile, "theme", theme, 200, "theme_probe", details, text_response(body, mimetype="text/plain; charset=UTF-8", profile=profile))
+    lured = component_lure("theme", theme, path, profile)
+    if lured is not None:
+        return lured
     if IMAGE_RE.search(path) or ASSET_RE.search(path):
-        return static_response(request.path, profile, label=metadata.get("name", theme))
-    abort(404)
+        return component_event(profile, "theme", theme, 200, "theme_probe", details, static_response(request.path, profile, label=metadata.get("name", theme)))
+    return component_event(profile, "theme", theme, 404, "theme_probe", details)
 
 
 @app.route("/wp-content/uploads", methods=ALL_METHODS)
@@ -840,24 +845,17 @@ def uploads(subpath=""):
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
-    log_event(request, profile, component_type="upload", component_slug=subpath, technique="uploads_probe", response_status=None, details=lure_details(request))
+
+    details = lure_details(request)
     if not subpath:
-        abort(403)
+        return component_event(profile, "upload", subpath, 403, "uploads_probe", details)
     lure = detect_path_lure("upload", subpath, subpath, request)
     if subpath.endswith(".php") or lure:
-        log_event(
-            request,
-            profile,
-            component_type="upload",
-            component_slug=subpath,
-            technique=lure["technique"] if lure else "upload_lure_payload",
-            response_status=404,
-            details=lure["details"] if lure else lure_details(request),
-        )
-        abort(404)
+        technique = lure["technique"] if lure else "upload_lure_payload"
+        return component_event(profile, "upload", subpath, 404, technique, lure["details"] if lure else details)
     if IMAGE_RE.search(subpath):
-        return static_response(request.path, profile)
-    abort(404)
+        return component_event(profile, "upload", subpath, 200, "uploads_probe", details, static_response(request.path, profile))
+    return component_event(profile, "upload", subpath, 404, "uploads_probe", details)
 
 
 @app.route("/wp-includes", methods=ALL_METHODS)
@@ -885,8 +883,6 @@ def commons(filename=None, ext=None):
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
 
-    if filename == "index" and ext == "php":
-        return home()
     lure = detect_common_file_lure(filename, ext, request)
     if lure:
         log_event(
@@ -919,6 +915,6 @@ def catchall(path):
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
-    technique = "interesting_file_probe" if re.search(r"(wp-config|\.sql|\.zip|backup|dump|\.bak|\.old|\.swp)", path, re.I) else "catchall_probe"
+    technique = "interesting_file_probe" if COMMON_FILE_RE.search(path) else "catchall_probe"
     log_event(request, profile, component_type="unknown", component_slug=path, technique=technique, response_status=404, details=lure_details(request))
     abort(404)
