@@ -127,7 +127,7 @@ def test_running_container_http_surface(ready_container):
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     assert status == 200
-    assert b"Invalid username" in body
+    assert b"password you entered" in body
     assert "wordpress_test_cookie" in headers.get("Set-Cookie", "")
 
     ajax_body = urlencode({"action": "wordpot_smoke_test", "file": "http://169.254.169.254/"}).encode("utf-8")

@@ -2,6 +2,7 @@
 """Gunicorn settings for the Wordpot container."""
 
 import gunicorn.http.wsgi as gunicorn_wsgi
+import gunicorn.util as gunicorn_util
 
 
 bind = "0.0.0.0:80"
@@ -23,3 +24,6 @@ def _default_headers_without_server(self):
 
 
 gunicorn_wsgi.Response.default_headers = _default_headers_without_server
+# Gunicorn classifies Server as hop-by-hop and drops the application's
+# profile-specific header along with its own default. Keep the app header.
+gunicorn_util.hop_headers.discard("server")

@@ -55,6 +55,7 @@ def test_gunicorn_server_header_is_removed():
     headers = module.gunicorn_wsgi.Response.default_headers(FakeResponse())
     assert not any(header.lower().startswith("server:") for header in headers)
     assert any(header.startswith("Date:") for header in headers)
+    assert not module.gunicorn_util.is_hoppish("Server")
     assert module.preload_app is True
 
 
