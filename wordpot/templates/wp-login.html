@@ -57,14 +57,22 @@
 
     {% if vars['BADLOGIN'] %}
     <div id="login_error" class="notice notice-error" role="alert">
-        <p><strong>Error:</strong> Invalid username. <a href="/wp-login.php?action=lostpassword">Lost your password?</a></p>
+        {% if vars.get('LOGIN_ERROR') == 'empty_username' %}
+        <p><strong>Error:</strong> The username field is empty.</p>
+        {% elif vars.get('LOGIN_ERROR') == 'empty_password' %}
+        <p><strong>Error:</strong> The password field is empty.</p>
+        {% elif vars.get('LOGIN_ERROR') == 'incorrect_password' %}
+        <p><strong>Error:</strong> The password you entered for the username <strong>{{ vars['LOGIN_USERNAME'] }}</strong> is incorrect. <a href="/wp-login.php?action=lostpassword">Lost your password?</a></p>
+        {% else %}
+        <p><strong>Error:</strong> The username <strong>{{ vars.get('LOGIN_USERNAME', '') }}</strong> is not registered on this site. If you are unsure of your username, try your email address instead.</p>
+        {% endif %}
     </div>
     {% endif %}
 
     <form name="loginform" id="loginform" action="/wp-login.php" method="post">
         <p>
             <label for="user_login">Username or Email Address</label>
-            <input type="text" name="log" id="user_login" class="input" value="" size="20" autocapitalize="off" autocomplete="username" required="required" />
+            <input type="text" name="log" id="user_login" class="input" value="{{ vars.get('LOGIN_USERNAME', '') }}" size="20" autocapitalize="off" autocomplete="username" required="required" />
         </p>
 
         <div class="user-pass-wrap">

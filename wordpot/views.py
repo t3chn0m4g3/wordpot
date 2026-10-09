@@ -456,6 +456,18 @@ def feed():
     return xml_response(body, profile=profile)
 
 
+def login_error_kind(profile, username, password):
+    """Mirror wp_authenticate(): known users get "incorrect password"."""
+    if not username:
+        return "empty_username"
+    if not password:
+        return "empty_password"
+    known = {author["slug"].lower() for author in profile.get("authors", [])}
+    if username.lower() in known:
+        return "incorrect_password"
+    return "invalid_username"
+
+
 @app.route("/wp-login.php", methods=ALL_METHODS)
 def login():
     profile = current_profile()
@@ -465,8 +477,12 @@ def login():
     action = request.values.get("action") or "login"
     redirect_to = request.values.get("redirect_to") or "/wp-admin/"
     bad_login = False
+    login_error = None
+    username = ""
     if request.method == "POST":
         bad_login = True
+        username = request.form.get("log", "")
+        login_error = login_error_kind(profile, username, request.form.get("pwd", ""))
         log_event(
             request,
             profile,
@@ -493,6 +509,8 @@ def login():
         profile,
         noindex=True,
         BADLOGIN=bad_login,
+        LOGIN_ERROR=login_error,
+        LOGIN_USERNAME=username,
         LOGIN_ACTION=action,
         REDIRECT_TO=redirect_to,
     )
@@ -752,7 +770,27 @@ def component_event(profile, component_type, slug, status, technique, details, r
     return response
 
 
+def timthumb_response(profile):
+    src = request.args.get("src", "")
+    if not src:
+        error = "No image specified"
+    elif "://" in src:
+        error = ("You may not fetch images from that site. To enable this site in timthumb, you can either add it to "
+                 "$ALLOWED_SITES and set ALLOW_EXTERNAL=true. Or you can set ALLOW_ALL_EXTERNAL_SITES=true, depending on your security needs.")
+    else:
+        error = "Could not find the internal image you specified."
+    return render_wp_template(
+        "timthumb.html",
+        profile,
+        status=400,
+        TIMTHUMB_ERROR=error,
+        QUERY_STRING=request.query_string.decode("utf-8", errors="replace"),
+    )
+
+
 def lure_response(lure, profile):
+    if lure["response_kind"] == "timthumb":
+        return timthumb_response(profile)
     if request.method == "POST":
         return json_response({"success": False, "data": {"message": "Invalid nonce."}}, profile=profile)
     return text_response("0", mimetype="text/plain; charset=UTF-8", profile=profile)

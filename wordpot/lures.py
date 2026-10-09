@@ -14,6 +14,7 @@ LURE_PATH_RE = re.compile(
     re.I,
 )
 TIMTHUMB_RE = re.compile(r"(?:timthumb|thumb|phpthumb|uploadify)", re.I)
+TIMTHUMB_SCRIPT_RE = re.compile(r"(?:^|/)(?:timthumb|thumb)\.php$", re.I)
 COMMON_FILE_RE = re.compile(r"(wp-config|\.sql|\.zip|backup|dump|\.bak|\.old|\.swp|\.tar|\.gz)", re.I)
 DEBUG_FILE_RE = re.compile(r"(debug|phpinfo|info|server-status|server-info)", re.I)
 
@@ -32,11 +33,14 @@ def detect_path_lure(component_type, component_slug, subpath, req):
 
     if TIMTHUMB_RE.search(path):
         details["matched_pattern"] = "timthumb_uploadify"
+        # timthumb.php / thumb.php answer like TimThumb so scanners follow up
+        # with a src= payload; remote images are never fetched.
+        is_timthumb = TIMTHUMB_SCRIPT_RE.search(path) is not None
         return {
             "technique": "timthumb_probe",
             "details": details,
-            "response_status": 404,
-            "response_kind": "not_found",
+            "response_status": 400 if is_timthumb else 404,
+            "response_kind": "timthumb" if is_timthumb else "not_found",
         }
 
     # Static assets such as logo.png or file-upload.js are ordinary theme and

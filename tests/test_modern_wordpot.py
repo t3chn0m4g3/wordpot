@@ -163,7 +163,7 @@ def test_login_and_author_inputs_do_not_500(client):
 
     assert malformed_author.status_code == 200
     assert missing_credentials.status_code == 200
-    assert "Invalid username" in missing_credentials.get_data(as_text=True)
+    assert "The username field is empty." in missing_credentials.get_data(as_text=True)
     assert "wordpress_test_cookie" in missing_credentials.headers.get("Set-Cookie", "")
 
 
@@ -245,7 +245,7 @@ def test_timthumb_probe_is_modern_lure_event(client, monkeypatch):
         environ_base={"REMOTE_ADDR": "203.0.113.41"},
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 400
     event = next(item for item in captured if item.get("technique") == "timthumb_probe")
     assert event["component_type"] == "plugin"
     assert event["component_slug"] == plugin_slug
