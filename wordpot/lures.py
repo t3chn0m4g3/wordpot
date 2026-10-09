@@ -20,11 +20,19 @@ DEBUG_FILE_RE = re.compile(r"(debug|phpinfo|info|server-status|server-info)", re
 
 
 def lure_details(req):
-    values = {}
-    for key in req.values:
-        if LURE_PARAM_RE.search(key):
-            values[key] = req.values.get(key, "")
-    return {"action": req.values.get("action"), "lure_params": values}
+    # Parameter names come from the client, so they are logged as values of a
+    # list and never become keys of the event (one field per name in an index).
+    params = []
+    seen = set()
+    for source in (req.args, req.form):
+        for key in source:
+            if key not in seen and LURE_PARAM_RE.search(key):
+                seen.add(key)
+                params.append({"name": key, "value": req.values.get(key, "")})
+    details = {"action": req.values.get("action")}
+    if params:
+        details["lure_params"] = params
+    return details
 
 
 def detect_path_lure(component_type, component_slug, subpath, req):
@@ -46,7 +54,7 @@ def detect_path_lure(component_type, component_slug, subpath, req):
     # Static assets such as logo.png or file-upload.js are ordinary theme and
     # plugin files; only treat them as lures when they carry lure parameters.
     path_matches = LURE_PATH_RE.search(path) and not is_static_asset(path)
-    if path_matches or details["lure_params"]:
+    if path_matches or details.get("lure_params"):
         return {
             "technique": "%s_lure_payload" % component_type,
             "details": details,

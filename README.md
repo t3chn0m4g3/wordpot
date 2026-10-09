@@ -1,6 +1,6 @@
-# Wordpot 3.0.0
+# Wordpot 3.0.1
 
-Wordpot 3.0.0 is a safe WordPress honeypot. It emulates enough of a real WordPress
+Wordpot 3.0.1 is a safe WordPress honeypot. It emulates enough of a real WordPress
 installation to attract scanners, credential attacks, XML-RPC probes, REST API
 enumeration, plugin and theme fingerprinting, and common payload delivery
 attempts. It does not run PHP, does not connect to a database, does not fetch
@@ -340,11 +340,11 @@ objects remain present because they are explicit values rather than empty text.
 | `payload_stored` | `true` when the raw request body was written to the payload spool. |
 | `payload_ref` | Portable relative payload path below `PAYLOAD_DIR`, for example `ab/abcdef....bin`; omitted when no payload file was stored. |
 | `payload_path` | Absolute payload path as seen by the running process. In Docker this is usually below `/opt/wordpot/logs/payloads`; omitted when no payload file was stored. |
-| `username` | Normalized observed username from WordPress login fields, generic form fields, or Basic Auth; omitted when not observed. |
-| `password` | Normalized observed password from WordPress login fields, generic form fields, or Basic Auth; omitted when not observed. Treat this as sensitive. |
+| `username` | Normalized observed username from WordPress login fields, generic form fields, Basic Auth, or a single XML-RPC login; omitted when not observed. |
+| `password` | Normalized observed password from WordPress login fields, generic form fields, Basic Auth, or a single XML-RPC login; omitted when not observed. Treat this as sensitive. |
 | `credentials_observed` | Extracted login/basic-auth fields when present; omitted when not observed. Treat this as sensitive. |
 | `response_status` | HTTP status code that Wordpot intended to return for this event. |
-| `details` | Optional route-specific dictionary. Config baits may include `bait_file`; webshell probes include `webshell_probe`; XML-RPC may include `credential_pairs`, `credential_pair_count`, `pingback_source`, and `pingback_target`; upload events may include `uploaded_files`, `upload_sha256`, and `marker`; requests also record a supplied `http_host` here. |
+| `details` | Optional route-specific dictionary. Config baits may include `bait_file`; webshell probes include `webshell_probe`; XML-RPC may include `credential_pairs`, `credential_pair_count`, `pingback_source`, and `pingback_target`; upload events may include `uploaded_files`, `upload_sha256`, and `marker`; lures record suspicious request parameters as `lure_params`, a list of `{"name", "value"}` objects (the client chooses the names, so they are never used as keys); requests also record a supplied `http_host` here. |
 
 Profile identity settings (`THEME`, `SERVER`, `BLOGTITLE`, `BLOGSUBTITLE`,
 `VERSION`, and `AUTHORS`) override the corresponding value in every profile
