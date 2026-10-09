@@ -9,6 +9,7 @@ from werkzeug.exceptions import RequestEntityTooLarge
 
 from wordpot import app
 from wordpot.assets import ASSET_RE, IMAGE_RE, asset_response
+from wordpot.bait import serve_config_bait, serve_webshell_bait
 from wordpot.events import is_loopback_request, log_event
 from wordpot.lures import COMMON_FILE_RE, detect_common_file_lure, detect_path_lure, lure_details
 from wordpot.profiles import (
@@ -16,6 +17,18 @@ from wordpot.profiles import (
     plugin_for_slug,
     profile_template_vars,
     theme_for_slug,
+)
+from wordpot.state import lookup_upload, record_multipart_uploads
+from wordpot.xmlrpc import (
+    LOGIN_FAULT,
+    LOGIN_METHODS,
+    PINGBACK_FAULT,
+    WORDPRESS_METHODS,
+    credential_pair_for_call,
+    fault_response,
+    multicall_response,
+    parse_call,
+    response as xmlrpc_success_response,
 )
 
 
@@ -562,19 +575,60 @@ def xmlrpc():
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(["POST", "OPTIONS"])
+    if request.method in READ_METHODS and request.args.get("rsd") is not None:
+        log_event(request, profile, component_type="core", component_slug="xmlrpc.php", technique="xmlrpc_probe", response_status=200, include_payload=False)
+        rsd = '''<?xml version="1.0" encoding="UTF-8"?>
+<rsd version="1.0" xmlns="http://archipelago.phrasewise.com/rsd"><service><engineName>WordPress</engineName><engineLink>https://wordpress.org/</engineLink><homePageLink>%s</homePageLink><apis><api name="WordPress" blogID="1" preferred="true" apiLink="%s"/></apis></service></rsd>''' % (site_url("/"), site_url("/xmlrpc.php"))
+        return xml_response(rsd, profile=profile)
     if request.method != "POST":
         log_event(request, profile, component_type="core", component_slug="xmlrpc.php", technique="xmlrpc_probe", response_status=405, include_payload=False)
         response = text_response("XML-RPC server accepts POST requests only.", status=405, mimetype="text/plain; charset=UTF-8", profile=profile)
         response.headers["Allow"] = "POST"
         return response
 
-    body = request.get_data(cache=True, as_text=True) or ""
-    technique = "xmlrpc_multicall" if "system.multicall" in body else "xmlrpc_login"
-    log_event(request, profile, component_type="core", component_slug="xmlrpc.php", technique=technique, response_status=200)
-    fault = """<?xml version="1.0"?>
-<methodResponse><fault><value><struct><member><name>faultCode</name><value><int>403</int></value></member><member><name>faultString</name><value><string>Incorrect username or password.</string></value></member></struct></value></fault></methodResponse>
-"""
-    return xml_response(fault, profile=profile)
+    try:
+        method_name, params = parse_call(request.get_data(cache=True, as_text=False) or b"")
+    except Exception:
+        log_event(request, profile, component_type="core", component_slug="xmlrpc.php", technique="xmlrpc_login", response_status=200)
+        return xml_response(fault_response(LOGIN_FAULT), profile=profile)
+
+    if method_name == "system.multicall":
+        calls = params[0] if params and isinstance(params[0], list) else []
+        pairs = [pair for call in calls if (pair := credential_pair_for_call(call)) is not None]
+        details = {"credential_pair_count": len(pairs), "credential_pairs": pairs[:50]}
+        technique = "xmlrpc_multicall"
+        body = multicall_response(calls)
+    elif method_name == "system.listMethods":
+        details = {}
+        technique = "xmlrpc_list_methods"
+        body = xmlrpc_success_response(WORDPRESS_METHODS)
+    elif method_name == "demo.sayHello":
+        details = {}
+        technique = "xmlrpc_probe"
+        body = xmlrpc_success_response("Hello!")
+    elif method_name in LOGIN_METHODS:
+        params = params or ()
+        username = str(params[-2]) if len(params) >= 2 else ""
+        password = str(params[-1]) if len(params) >= 2 else ""
+        pair = {"username": username, "password": password}
+        details = {"credential_pairs": [pair], "credential_pair_count": 1}
+        technique = "xmlrpc_login"
+        body = fault_response(LOGIN_FAULT)
+    elif method_name == "pingback.ping":
+        params = params or ()
+        details = {
+            "pingback_source": str(params[0]) if len(params) > 0 else "",
+            "pingback_target": str(params[1]) if len(params) > 1 else "",
+        }
+        technique = "xmlrpc_pingback"
+        body = fault_response(PINGBACK_FAULT)
+    else:
+        details = {}
+        technique = "xmlrpc_probe"
+        body = fault_response(LOGIN_FAULT)
+
+    log_event(request, profile, component_type="core", component_slug="xmlrpc.php", technique=technique, response_status=200, details=details)
+    return xml_response(body, profile=profile)
 
 
 @app.route("/wp-json", methods=ALL_METHODS)
@@ -756,6 +810,14 @@ def plugins_directory():
 
 def component_event(profile, component_type, slug, status, technique, details, response=None):
     """Log exactly one event for a component request, then respond or abort."""
+    details = dict(details or {})
+    if component_type == "upload" or (technique or "").endswith("_lure_payload"):
+        uploads = record_multipart_uploads(request)
+        if uploads:
+            details["uploaded_files"] = [
+                {"basename": item["basename"], "sha256": item["sha256"]}
+                for item in uploads
+            ]
     log_event(
         request,
         profile,
@@ -768,6 +830,26 @@ def component_event(profile, component_type, slug, status, technique, details, r
     if response is None:
         abort(status)
     return response
+
+
+def serve_upload_followup(profile, component_type, slug):
+    if request.method != "GET" or not request.path.startswith("/wp-content/"):
+        return None
+    basename = request.path.rsplit("/", 1)[-1]
+    record = lookup_upload(basename)
+    if record is None:
+        return None
+    log_event(
+        request,
+        profile,
+        component_type=component_type,
+        component_slug=slug or basename,
+        technique="upload_followup",
+        response_status=200,
+        details={"marker": record["marker"], "upload_sha256": record["sha256"]},
+        include_payload=False,
+    )
+    return text_response(record["marker"], mimetype="text/plain; charset=UTF-8", profile=profile)
 
 
 def timthumb_response(profile):
@@ -814,6 +896,12 @@ def plugin(plugin, subpath=""):
 
     path = subpath.strip("/")
     details = {"subpath": path}
+    followup = serve_upload_followup(profile, "plugin", plugin)
+    if followup is not None:
+        return followup
+    webshell = serve_webshell_bait(request, profile, "plugin", plugin)
+    if webshell is not None:
+        return webshell
     metadata = plugin_for_slug(profile, plugin)
 
     if metadata is None:
@@ -855,6 +943,12 @@ def theme(theme, subpath=""):
 
     path = subpath.strip("/")
     details = {"subpath": path}
+    followup = serve_upload_followup(profile, "theme", theme)
+    if followup is not None:
+        return followup
+    webshell = serve_webshell_bait(request, profile, "theme", theme)
+    if webshell is not None:
+        return webshell
     metadata = theme_for_slug(profile, theme)
 
     if metadata is None:
@@ -884,6 +978,13 @@ def uploads(subpath=""):
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
 
+    followup = serve_upload_followup(profile, "upload", subpath)
+    if followup is not None:
+        return followup
+    webshell = serve_webshell_bait(request, profile, "upload", subpath)
+    if webshell is not None:
+        return webshell
+
     details = lure_details(request)
     if not subpath:
         return component_event(profile, "upload", subpath, 403, "uploads_probe", details)
@@ -903,6 +1004,9 @@ def wp_includes(subpath=""):
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
+    followup = serve_upload_followup(profile, "core", subpath)
+    if followup is not None:
+        return followup
     if not subpath:
         abort(403)
     if subpath == "wlwmanifest.xml":
@@ -920,6 +1024,13 @@ def commons(filename=None, ext=None):
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
+
+    bait = serve_config_bait(request, profile)
+    if bait is not None:
+        return bait
+    webshell = serve_webshell_bait(request, profile, "core", "%s.%s" % (filename, ext))
+    if webshell is not None:
+        return webshell
 
     lure = detect_common_file_lure(filename, ext, request)
     if lure:
@@ -953,6 +1064,12 @@ def catchall(path):
     profile = current_profile()
     if request.method == "OPTIONS":
         return options_response(ALL_METHODS)
+    bait = serve_config_bait(request, profile)
+    if bait is not None:
+        return bait
+    webshell = serve_webshell_bait(request, profile, "unknown", path)
+    if webshell is not None:
+        return webshell
     technique = "interesting_file_probe" if COMMON_FILE_RE.search(path) else "catchall_probe"
     log_event(request, profile, component_type="unknown", component_slug=path, technique=technique, response_status=404, details=lure_details(request))
     abort(404)

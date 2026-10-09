@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+from xmlrpc.client import dumps
 
 import pytest
 from flask import request
@@ -67,6 +68,8 @@ DOCUMENTED_CONFIG_FIELDS = {
     "PAYLOAD_FILE_MODE",
     "PAYLOAD_DIR",
     "EVENT_LOG_FILE",
+    "EVENT_LOG_MAX_BYTES",
+    "EVENT_LOG_BACKUP_COUNT",
     "EVENT_LOG_EXCLUDE_HEALTHCHECKS",
     "EVENT_LOG_EXCLUDE_PATHS",
     "EVENT_DEST_IP",
@@ -189,7 +192,7 @@ def test_xmlrpc_behaves_like_wordpress_endpoint(client):
     get_response = client.get("/xmlrpc.php")
     post_response = client.post(
         "/xmlrpc.php",
-        data="<methodCall><methodName>system.multicall</methodName></methodCall>",
+        data=dumps(([{"methodName": "wp.getUsersBlogs", "params": ["admin", "bad"]}],), methodname="system.multicall"),
         content_type="text/xml",
     )
 
@@ -229,7 +232,8 @@ def test_lure_endpoints_capture_but_do_not_accept_real_actions(client):
     assert ajax.status_code == 200
     assert ajax.get_json()["success"] is False
     assert rest_write.status_code == 401
-    assert upload.status_code == 404
+    assert upload.status_code == 200
+    assert "Web File Manager" in upload.get_data(as_text=True)
 
 
 def test_timthumb_probe_is_modern_lure_event(client, monkeypatch):
@@ -355,7 +359,7 @@ def test_destination_ip_skips_container_wildcard_bind_address():
 
 
 def test_large_payload_is_rejected(client):
-    response = client.post("/wp-login.php", data=b"A" * 70000, content_type="application/octet-stream")
+    response = client.post("/wp-login.php", data=b"A" * (1024 * 1024 + 1), content_type="application/octet-stream")
 
     assert response.status_code == 413
 

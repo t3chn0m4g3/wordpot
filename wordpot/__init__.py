@@ -31,10 +31,10 @@ REQUIRED_OPTIONS = {
         'HOST':  '127.0.0.1',
         'PORT':  '80',
         'INTERACTION_DEPTH': 'medium',
-        'MAX_CONTENT_LENGTH': 65536,
+        'MAX_CONTENT_LENGTH': 1048576,
         'PAYLOAD_EXCERPT_BYTES': 4096,
         'PAYLOAD_STORAGE_ENABLED': True,
-        'PAYLOAD_STORAGE_MAX_BYTES': 65536,
+        'PAYLOAD_STORAGE_MAX_BYTES': 1048576,
         'PAYLOAD_DIR_MODE': 0o750,
         'PAYLOAD_FILE_MODE': 0o640,
         'PAYLOAD_DIR': None,
@@ -104,7 +104,7 @@ try:
 except Exception as exc:
     LOGGER.error('Can\'t load conf file %s: %s', conffile, exc)
 check_options()
-app.config['MAX_CONTENT_LENGTH'] = int(app.config.get('MAX_CONTENT_LENGTH', 65536))
+app.config['MAX_CONTENT_LENGTH'] = int(app.config.get('MAX_CONTENT_LENGTH', 1048576))
 app.config['PAYLOAD_STORAGE_MAX_BYTES'] = int(app.config.get('PAYLOAD_STORAGE_MAX_BYTES') or app.config['MAX_CONTENT_LENGTH'])
 
 

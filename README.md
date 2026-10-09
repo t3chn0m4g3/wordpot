@@ -21,7 +21,8 @@ Wordpot exposes a modern WordPress-like surface:
   theme stylesheet fingerprints.
 - `/wp-login.php` with test-cookie behavior and credential-attempt collection.
 - `/wp-admin/` redirects and `/wp-admin/admin-ajax.php` action lures.
-- `/xmlrpc.php` with realistic GET rejection and POST fault responses.
+- `/xmlrpc.php` with WordPress method discovery, credential faults, batched
+  login attempts, pingback faults, and an RSD document at `?rsd`.
 - `/wp-json/`, `/wp-json/wp/v2/users`, `/wp-json/wp/v2/posts`, and
   application-password endpoints.
 - `/readme.html`, `/license.txt`, `/robots.txt`, `/sitemap.xml`,
@@ -30,6 +31,10 @@ Wordpot exposes a modern WordPress-like surface:
   fingerprints, including `readme.txt`, main plugin files, `style.css`,
   assets, images, and differentiated 200/403/404 behavior.
 - `/wp-content/uploads/...` lures for web shells and suspicious upload probes.
+- Config-file baits for `/.env`, `/.git/config`, `/.git/HEAD`, and common
+  `wp-config.php` backup names.
+- Static login masks for known webshell probe names; submitted values are
+  logged as probes, and commands are never run.
 
 The goal is realism for scanners and bots, not vulnerability. Payloads are
 captured, hashed, truncated in JSONL, and optionally stored as raw files in a
@@ -39,14 +44,18 @@ non-web-served payload directory.
 
 The default configuration is intentionally conservative:
 
-- `MAX_CONTENT_LENGTH = 65536` rejects large request bodies.
+- `MAX_CONTENT_LENGTH = 1048576` rejects request bodies larger than 1 MiB.
+- `PAYLOAD_STORAGE_MAX_BYTES = 1048576` caps each raw body stored in the payload spool.
 - `PAYLOAD_EXCERPT_BYTES = 4096` stores only a small excerpt of each payload.
 - Full payloads are hashed with SHA-256 for correlation.
 - Raw request bodies are stored only when `PAYLOAD_STORAGE_ENABLED = True`.
 - Payload files use SHA-256 based names below `PAYLOAD_DIR`; request paths and
   upload filenames never influence the storage path.
-- Upload attempts are never written into `/wp-content/uploads/` or served back.
+- Uploaded files are never written into `/wp-content/uploads/` or executed.
+  A bounded literal from a simple `echo '...';` payload may be returned as
+  plain text on a later request for the uploaded basename.
 - SSRF-looking parameters are logged but never fetched.
+- XML-RPC pingback URLs are recorded but never fetched.
 - LFI/path parameters are logged but never read from the local filesystem.
 - REST, XML-RPC, admin-ajax, and login flows never authenticate a user.
 - Profile plugin metadata is fake; no PHP plugin code is executed.
@@ -196,14 +205,16 @@ Configuration reference:
 | `THEME` | Fallback theme slug when no profile supplies a theme. |
 | `SERVER` | Fallback `Server` header when no profile supplies one. |
 | `INTERACTION_DEPTH` | Interaction policy. The default `medium` captures modern WordPress probes without executing attacker input. |
-| `MAX_CONTENT_LENGTH` | Maximum accepted request body size in bytes. Larger bodies are rejected before route handling. |
+| `MAX_CONTENT_LENGTH` | Maximum accepted request body size in bytes. Default `1048576` (1 MiB); larger bodies are rejected before route handling. |
 | `PAYLOAD_EXCERPT_BYTES` | Maximum number of request-body bytes stored inline in the JSONL event log as `payload_excerpt`. |
 | `PAYLOAD_STORAGE_ENABLED` | Enables raw request-body spooling into the configured payload directory. |
-| `PAYLOAD_STORAGE_MAX_BYTES` | Maximum body size that will be written to the payload spool. Keep this at or below `MAX_CONTENT_LENGTH`. |
+| `PAYLOAD_STORAGE_MAX_BYTES` | Maximum body size that will be written to the payload spool. Default `1048576` (1 MiB); keep this at or below `MAX_CONTENT_LENGTH`. |
 | `PAYLOAD_DIR_MODE` | Octal mode for payload directories. Default `0o750` lets the container user and group traverse/read metadata while keeping access closed to others. |
 | `PAYLOAD_FILE_MODE` | Octal mode for payload body files. Default `0o640` lets the container user and group read captured payloads while keeping access closed to others. |
 | `PAYLOAD_DIR` | Payload spool directory. `None` means `<log-dir>/payloads`; Docker sets `WORDPOT_PAYLOAD_DIR=/opt/wordpot/logs/payloads`. |
 | `EVENT_LOG_FILE` | Structured JSONL event destination. Relative paths are written below the Wordpot log directory. Default: `wordpot.json`. Can also be set with `WORDPOT_EVENT_LOG_FILE`. |
+| `EVENT_LOG_MAX_BYTES` | Optional maximum size of `EVENT_LOG_FILE` before rotating it. Default `0` disables in-process rotation. |
+| `EVENT_LOG_BACKUP_COUNT` | Number of numbered JSONL backups retained when size-based rotation is enabled. Default `0`. |
 | `EVENT_LOG_EXCLUDE_HEALTHCHECKS` | Filters healthcheck requests from the JSONL event log when enabled. |
 | `EVENT_LOG_EXCLUDE_PATHS` | Paths treated as healthcheck/noise paths by the event logger. Default: `['/healthz']`. |
 | `EVENT_DEST_IP` | Optional override for the event `dest_ip` field. Useful behind NAT or a reverse proxy. Without an override, wildcard bind addresses such as `0.0.0.0` are skipped. |
@@ -275,9 +286,9 @@ and mounts only the log tree as writable storage. The payload spool is a
 - `$HOME/tpotce/data/wordpot/log` -> `/opt/wordpot/logs/`
 - `$HOME/tpotce/data/wordpot/log/payloads` -> `/opt/wordpot/logs/payloads/`
 
-The Docker image healthcheck uses `/healthz` and sends
-`X-Wordpot-Healthcheck: 1`. Those requests are filtered from `wordpot.json` so
-health monitoring does not look like attacker traffic.
+The Docker image healthcheck calls `/healthz`. Wordpot answers quietly only to
+loopback clients; remote requests receive a logged 404. No healthcheck header
+is needed.
 
 ## Logs and events
 
@@ -287,10 +298,11 @@ Wordpot writes:
 - `wordpot-runtime.log`: operational messages.
 - `profile-state.json`: last profile used by startup rotation.
 - `payloads/<sha256-prefix>/<sha256>.bin`: raw request bodies, when enabled.
+- `state/uploads.jsonl`: short-lived upload basenames, hashes, and inert marker
+  strings used for follow-up responses; entries expire after 24 hours.
 
-Healthcheck events are ignored when `EVENT_LOG_EXCLUDE_HEALTHCHECKS = True`.
-By default this excludes `/healthz` and any request carrying
-`X-Wordpot-Healthcheck: 1`.
+Loopback healthchecks on `/healthz` are not written to the event log. Other
+requests to that path are treated as ordinary remote traffic and receive a 404.
 
 Event field reference:
 
@@ -302,11 +314,11 @@ objects remain present because they are explicit values rather than empty text.
 | Field | Description |
 | --- | --- |
 | `timestamp` | UTC ISO-8601 event creation time. |
-| `request_id` | Per-request UUID also returned as `X-Request-ID`, useful for joining HTTP responses and log lines. |
+| `request_id` | Per-request UUID recorded in the event log. |
 | `profile_id` | Active honeypot profile id, such as `modern-business` or `commerce`. |
 | `src_ip` | Source IP used for attribution and profile stickiness. Honors trusted proxy handling only when configured. |
 | `src_port` | Source TCP port from WSGI `REMOTE_PORT`; omitted when unavailable. |
-| `dest_ip` | Destination IP or host as seen by the app. Wordpot skips wildcard bind addresses such as `0.0.0.0`; use `EVENT_DEST_IP` when Docker, NAT, or a proxy hides the public listener. |
+| `dest_ip` | Destination IP from `EVENT_DEST_IP` or the local listening socket when available. It is never derived from the client supplied `Host` header. Use `EVENT_DEST_IP` when Docker, NAT, or a proxy hides the public listener. |
 | `dest_port` | Destination port as seen by the app. Use `EVENT_DEST_PORT` when Docker, NAT, or a proxy hides the public listener. |
 | `user_agent` | Raw `User-Agent` header value, duplicated from `headers_subset` for easier indexing. |
 | `browser_family` | Parsed browser family from the `User-Agent` header. |
@@ -321,7 +333,7 @@ objects remain present because they are explicit values rather than empty text.
 | `headers_subset` | Small allowlist of useful headers: `Accept`, `Authorization`, `Content-Type`, `Referer`, `User-Agent`, `X-Forwarded-For`, and `X-Real-IP`. |
 | `component_type` | WordPress surface category, for example `core`, `plugin`, `theme`, `upload`, or `unknown`. |
 | `component_slug` | Specific component being probed, such as `xmlrpc.php`, `wp/v2/users`, `woocommerce`, or a theme slug. |
-| `technique` | Normalized lure or probe classification, such as `credential_attempt`, `xmlrpc_multicall`, or `admin_ajax_action`. |
+| `technique` | Normalized lure or probe classification, such as `credential_attempt`, `config_bait_served`, `webshell_probe`, `webshell_login`, `webshell_command`, `upload_followup`, `xmlrpc_list_methods`, `xmlrpc_login`, `xmlrpc_multicall`, `xmlrpc_pingback`, or `admin_ajax_action`. |
 | `payload_sha256` | SHA-256 of the full request body; omitted for empty/no-body requests. |
 | `payload_excerpt` | Truncated UTF-8-safe request-body excerpt limited by `PAYLOAD_EXCERPT_BYTES`; omitted when empty. |
 | `payload_size` | Full request-body size in bytes. |
@@ -332,7 +344,20 @@ objects remain present because they are explicit values rather than empty text.
 | `password` | Normalized observed password from WordPress login fields, generic form fields, or Basic Auth; omitted when not observed. Treat this as sensitive. |
 | `credentials_observed` | Extracted login/basic-auth fields when present; omitted when not observed. Treat this as sensitive. |
 | `response_status` | HTTP status code that Wordpot intended to return for this event. |
-| `details` | Optional route-specific dictionary for lures, actions, SSRF/LFI-looking parameters, or interesting query values. |
+| `details` | Optional route-specific dictionary. Config baits may include `bait_file`; webshell probes include `webshell_probe`; XML-RPC may include `credential_pairs`, `credential_pair_count`, `pingback_source`, and `pingback_target`; upload events may include `uploaded_files`, `upload_sha256`, and `marker`; requests also record a supplied `http_host` here. |
+
+Profile identity settings (`THEME`, `SERVER`, `BLOGTITLE`, `BLOGSUBTITLE`,
+`VERSION`, and `AUTHORS`) override the corresponding value in every profile
+when set in `wordpot.conf`. Supported identity command-line options apply the
+same overrides at startup.
+`gunicorn.conf.py` holds the container's Gunicorn bind/worker settings and
+removes Gunicorn's duplicate `Server` header while preserving the profile's
+header.
+
+The checked T-Pot CE logrotate config targets `/data/wordpot/log/*.log`, so it
+does not rotate `wordpot.json`. Keep Wordpot's in-process rotation disabled
+when ewsposter is consuming the file by line number; otherwise configure an
+external JSONL-aware rotation workflow that also coordinates its reader offset.
 
 Payload storage uses `payload_ref` as the portable identifier. For example, a
 payload with SHA-256 `abcdef...` is written below the configured payload

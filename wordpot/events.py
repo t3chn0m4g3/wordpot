@@ -205,7 +205,7 @@ def _payload_storage_enabled():
 def _payload_storage_max_bytes():
     from wordpot import app
 
-    return int(app.config.get("PAYLOAD_STORAGE_MAX_BYTES") or app.config.get("MAX_CONTENT_LENGTH", 65536))
+    return int(app.config.get("PAYLOAD_STORAGE_MAX_BYTES") or app.config.get("MAX_CONTENT_LENGTH", 1048576))
 
 
 def _mode_from_config(config_key, env_key, default):
